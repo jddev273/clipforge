@@ -19,6 +19,7 @@ public sealed class ClipItem
         {
             ClipType.Text => "\U0001F4C4",   // 📄
             ClipType.Html => "\U0001F310",   // 🌐
+            ClipType.Rtf => "\U0001F4DD",    // 📝
             ClipType.Image => "\U0001F5BC",  // 🖼
             ClipType.Files => "\U0001F4C1",  // 📁
             // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.

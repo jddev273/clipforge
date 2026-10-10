@@ -20,6 +20,11 @@ public static class WindowsClipboard
     private static uint HtmlFormatId =>
         _htmlFormatId != 0 ? _htmlFormatId : (_htmlFormatId = NativeMethods.RegisterClipboardFormatW("HTML Format"));
 
+    private static uint _rtfFormatId;
+
+    private static uint RtfFormatId =>
+        _rtfFormatId != 0 ? _rtfFormatId : (_rtfFormatId = NativeMethods.RegisterClipboardFormatW("Rich Text Format"));
+
     // ---------------- read ----------------
 
     public static bool TryGetText(out string? text)
@@ -67,6 +72,35 @@ public static class WindowsClipboard
                 finally { NativeMethods.GlobalUnlock(h); }
             });
         fragment = result;
+        return ok;
+    }
+
+    public static bool TryGetRtf(out string? rtf)
+    {
+        rtf = null;
+        uint fmt = RtfFormatId;
+        string? result = null;
+        bool ok = fmt != 0
+            && NativeMethods.IsClipboardFormatAvailable(fmt)
+            && WithClipboardOpen(() =>
+            {
+                var h = NativeMethods.GetClipboardData(fmt);
+                if (h == IntPtr.Zero) return false;
+                var p = NativeMethods.GlobalLock(h);
+                if (p == IntPtr.Zero) return false;
+                try
+                {
+                    int size = (int)NativeMethods.GlobalSize(h);
+                    var bytes = new byte[size];
+                    Marshal.Copy(p, bytes, 0, size);
+                    // RTF is ANSI; Latin1 round-trips the byte stream (control words are ASCII).
+                    int len = Array.IndexOf(bytes, (byte)0);
+                    result = Encoding.Latin1.GetString(bytes, 0, len < 0 ? size : len);
+                    return !string.IsNullOrEmpty(result);
+                }
+                finally { NativeMethods.GlobalUnlock(h); }
+            });
+        rtf = result;
         return ok;
     }
 
@@ -140,10 +174,40 @@ public static class WindowsClipboard
     public static bool IsHtmlAvailable() =>
         HtmlFormatId != 0 && NativeMethods.IsClipboardFormatAvailable(HtmlFormatId);
 
+    public static bool IsRtfAvailable() =>
+        RtfFormatId != 0 && NativeMethods.IsClipboardFormatAvailable(RtfFormatId);
+
     public static bool IsTextAvailable() =>
         NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_UNICODETEXT);
 
     // ---------------- write ----------------
+
+    public static bool TrySetRtf(string rtf)
+    {
+        ArgumentNullException.ThrowIfNull(rtf);
+        uint fmt = RtfFormatId;
+        if (fmt == 0) return false;
+        try
+        {
+            return WithClipboardOpen(() =>
+            {
+                NativeMethods.EmptyClipboard();
+                // RTF is ANSI (control words are ASCII); Latin1 round-trips the byte stream.
+                var bytes = Encoding.Latin1.GetBytes(rtf + '\0');
+                var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
+                if (h == IntPtr.Zero) return false;
+                var p = NativeMethods.GlobalLock(h);
+                if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+                Marshal.Copy(bytes, 0, p, bytes.Length);
+                NativeMethods.GlobalUnlock(h);
+                return NativeMethods.SetClipboardData(fmt, h) != IntPtr.Zero;
+                // NOTE: ownership of h transfers to the clipboard; do not free.
+            });
+        }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
+        catch { return false; }
+        #pragma warning restore CA1031
+    }
 
     public static bool TrySetText(string text)
     {

@@ -41,12 +41,25 @@ public sealed class SqliteClipStore : IClipStore
                 source_app TEXT,
                 created_at INTEGER NOT NULL,
                 pinned INTEGER NOT NULL DEFAULT 0,
-                content_hash TEXT NOT NULL DEFAULT ''
+                content_hash TEXT NOT NULL DEFAULT '',
+                rtf_text TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_clips_pinned ON clips(pinned, created_at DESC);
             """;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        // Migration: rtf_text column for pre-RTF databases (v0.1). ADD COLUMN is
+        // idempotent-guarded via pragma_table_info so old DBs upgrade in place.
+        await using var pragma = conn.CreateCommand();
+        pragma.CommandText = "SELECT COUNT(*) FROM pragma_table_info('clips') WHERE name = 'rtf_text'";
+        var hasRtf = (long)(await pragma.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
+        if (!hasRtf)
+        {
+            await using var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE clips ADD COLUMN rtf_text TEXT";
+            await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
 
     public async Task<ClipId> SaveAsync(Clip clip, CancellationToken ct = default)
@@ -56,8 +69,8 @@ public sealed class SqliteClipStore : IClipStore
         await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO clips (type, text_content, image_data, preview_text, source_app, created_at, pinned, content_hash)
-            VALUES ($type, $text, $image, $preview, $app, $created, $pinned, $hash);
+            INSERT INTO clips (type, text_content, image_data, preview_text, source_app, created_at, pinned, content_hash, rtf_text)
+            VALUES ($type, $text, $image, $preview, $app, $created, $pinned, $hash, $rtf);
             SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$type", clip.Type.ToString());
@@ -68,6 +81,7 @@ public sealed class SqliteClipStore : IClipStore
         cmd.Parameters.AddWithValue("$created", clip.CreatedAt.ToUnixTimeMilliseconds());
         cmd.Parameters.AddWithValue("$pinned", clip.Pinned ? 1 : 0);
         cmd.Parameters.AddWithValue("$hash", clip.ContentHash);
+        cmd.Parameters.AddWithValue("$rtf", (object?)clip.RtfText ?? DBNull.Value);
         var id = new ClipId((long)(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L));
         clip.Id = id;
         return id;
@@ -170,7 +184,7 @@ public sealed class SqliteClipStore : IClipStore
     }
 
     private const string Select =
-        "SELECT id, type, text_content, image_data, preview_text, source_app, created_at, pinned, content_hash FROM clips";
+        "SELECT id, type, text_content, image_data, preview_text, source_app, created_at, pinned, content_hash, rtf_text FROM clips";
 
     private static async Task<IReadOnlyList<Clip>> ReadAllAsync(SqliteCommand cmd, CancellationToken ct)
     {
@@ -188,7 +202,8 @@ public sealed class SqliteClipStore : IClipStore
                 SourceApp = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5),
                 CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(6)),
                 Pinned = reader.GetInt64(7) != 0,
-                ContentHash = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false) ? string.Empty : reader.GetString(8)
+                ContentHash = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false) ? string.Empty : reader.GetString(8),
+                RtfText = await reader.IsDBNullAsync(9, ct).ConfigureAwait(false) ? null : reader.GetString(9)
             });
         }
         return list;

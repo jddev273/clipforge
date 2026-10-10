@@ -3,7 +3,9 @@ namespace ClipForge.Core;
 /// <summary>
 /// A single clipboard history entry as stored in SQLite.
 /// Text/Html/Files payloads live in <see cref="Text"/> (files = newline-joined paths);
-/// image payloads live in <see cref="ImageData"/> as PNG bytes.
+/// image payloads live in <see cref="ImageData"/> as PNG bytes; RTF clips carry the
+/// RTF markup in <see cref="RtfText"/> plus a plain-text companion in <see cref="Text"/>
+/// (for preview, search and paste-as-plain-text).
 /// Mandatory state is <c>required</c> + <c>init</c>: a Clip cannot exist half-built.
 /// <see cref="Id"/> is the deliberate exception — it is assigned by the store on insert,
 /// so it stays settable (and is <see cref="ClipId.None"/> until then).
@@ -13,6 +15,8 @@ public sealed class Clip
     public ClipId Id { get; set; } = ClipId.None;
     public required ClipType Type { get; init; }
     public string? Text { get; init; }
+    /// <summary>RTF markup for <see cref="ClipType.Rtf"/> clips; the plain-text companion lives in <see cref="Text"/>.</summary>
+    public string? RtfText { get; init; }
     // CA1819 suppressed by design: the payload is an immutable snapshot — captured once,
     // never mutated afterwards. Callers must treat it as read-only.
 #pragma warning disable CA1819

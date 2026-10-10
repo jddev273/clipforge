@@ -175,6 +175,7 @@ public sealed class ClipboardListener : IDisposable
     private static bool HasPayload(CapturedClip c) => c.Type switch
     {
         ClipType.Text or ClipType.Html => !string.IsNullOrEmpty(c.Text),
+        ClipType.Rtf => !string.IsNullOrEmpty(c.RtfText),
         ClipType.Image => c.ImagePng is { Length: > 0 },
         ClipType.Files => c.FilePaths is { Count: > 0 },
         _ => false

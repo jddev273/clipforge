@@ -18,11 +18,22 @@ public sealed record CapturedClip(
     string? SourceApp,
     int? ImageWidth,
     int? ImageHeight,
-    DateTimeOffset CapturedAt)
+    DateTimeOffset CapturedAt,
+    // RTF markup for ClipType.Rtf; the plain-text companion (when the source also
+    // exposed CF_UNICODETEXT) lives in Text. Defaults null for the other formats.
+    string? RtfText = null)
 {
     private static readonly Regex HtmlTag =
         // MA0009: match timeout bounds catastrophic backtracking on hostile input.
         new("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+    // Best-effort RTF text extraction for previews only (the handler also grabs the
+    // plain-text companion when the source exposes CF_UNICODETEXT, which covers Word
+    // et al.). MA0009/MA0023 as above.
+    private static readonly Regex RtfPar =
+        new(@"\\par[d]?", RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+    private static readonly Regex RtfControl =
+        new(@"\\[a-z]+-?\d* ?", RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     /// <summary>
     /// Corruption canary for the switch discard arms. The compiler forces us to handle
@@ -37,6 +48,7 @@ public sealed record CapturedClip(
     {
         ClipType.Text => Truncate(CollapseWhitespace(Text ?? string.Empty)),
         ClipType.Html => Truncate(CollapseWhitespace(HtmlTag.Replace(Text ?? string.Empty, " "))),
+        ClipType.Rtf => Truncate(CollapseWhitespace(Text ?? StripRtf(RtfText) ?? string.Empty)),
         ClipType.Files => FilePreview(FilePaths),
         ClipType.Image => ImageWidth.HasValue ? $"Image {ImageWidth}\u00d7{ImageHeight}" : "Image",
         // The discard arm is mandatory: the compiler must account for unnamed enum values
@@ -54,6 +66,7 @@ public sealed record CapturedClip(
                 ClipType.Image => ImagePng ?? Array.Empty<byte>(),
                 ClipType.Files => Encoding.UTF8.GetBytes(string.Join('\n', FilePaths ?? Array.Empty<string>())),
                 ClipType.Text or ClipType.Html => Encoding.UTF8.GetBytes(Text ?? string.Empty),
+                ClipType.Rtf => Encoding.UTF8.GetBytes(RtfText ?? Text ?? string.Empty),
                 _ => UnknownClipType<byte[]>() // see note on PreviewText: corruption canary
             };
             var hash = SHA256.HashData(payload);
@@ -68,9 +81,10 @@ public sealed record CapturedClip(
         {
             ClipType.Files => string.Join('\n', FilePaths ?? Array.Empty<string>()),
             ClipType.Image => null,
-            ClipType.Text or ClipType.Html => Text,
+            ClipType.Text or ClipType.Html or ClipType.Rtf => Text,
             _ => UnknownClipType<string?>() // see note on PreviewText: corruption canary
         },
+        RtfText = RtfText,
         ImageData = Type == ClipType.Image ? ImagePng : null,
         PreviewText = PreviewText,
         SourceApp = SourceApp,
@@ -90,6 +104,18 @@ public sealed record CapturedClip(
     private static string CollapseWhitespace(string s) =>
         // MA0009: match timeout on the static overload too.
         Regex.Replace(s, @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
+
+    /// <summary>Best-effort RTF-to-text, preview-only. Returns null when nothing readable remains.</summary>
+    private static string? StripRtf(string? rtf)
+    {
+        if (string.IsNullOrEmpty(rtf)) return null;
+        string s = RtfPar.Replace(rtf, "\n");
+        s = RtfControl.Replace(s, string.Empty);
+        s = s.Replace("{", string.Empty, StringComparison.Ordinal)
+             .Replace("}", string.Empty, StringComparison.Ordinal);
+        s = CollapseWhitespace(s);
+        return string.IsNullOrWhiteSpace(s) ? null : s;
+    }
 
     private static string Truncate(string s, int max = 200) =>
         s.Length <= max ? s : s[..max].TrimEnd() + "\u2026";

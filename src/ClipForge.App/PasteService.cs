@@ -26,6 +26,7 @@ public static class PasteService
         {
             ClipType.Text => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
             ClipType.Html => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
+            ClipType.Rtf => !string.IsNullOrEmpty(clip.RtfText) && WindowsClipboard.TrySetRtf(clip.RtfText),
             ClipType.Image => clip.ImageData is not null && WindowsClipboard.TrySetImage(clip.ImageData),
             ClipType.Files => WindowsClipboard.TrySetFileList(clip.FilePaths),
             // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.

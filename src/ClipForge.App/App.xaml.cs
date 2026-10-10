@@ -58,7 +58,7 @@ public partial class App : System.Windows.Application, IDisposable
             _ranker = PluginLoader.Load<ISearchRanker>(new FuzzyMatcher());
             _formatHandlers = PluginLoader.LoadAll<IClipFormatHandler>(new IClipFormatHandler[]
             {
-                new FilesFormatHandler(), new ImageFormatHandler(),
+                new FilesFormatHandler(), new ImageFormatHandler(), new RtfFormatHandler(),
                 new HtmlFormatHandler(), new TextFormatHandler()
             });
 
@@ -160,7 +160,7 @@ public partial class App : System.Windows.Application, IDisposable
         {
             // Privacy-by-default: password managers and secrets are never stored.
             if (Privacy.IsSensitiveApp(captured.SourceApp)) return;
-            if (captured.Type is ClipType.Text or ClipType.Html &&
+            if (captured.Type is ClipType.Text or ClipType.Html or ClipType.Rtf &&
                 _secrets.Detect(captured.Text) is not null) return;
 
             var clip = captured.ToClip();

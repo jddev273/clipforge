@@ -6,5 +6,6 @@ public enum ClipType
     Text,
     Image,
     Files,
-    Html
+    Html,
+    Rtf
 }
