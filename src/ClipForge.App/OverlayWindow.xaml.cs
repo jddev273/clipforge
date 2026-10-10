@@ -1,0 +1,143 @@
+using System.Windows;
+using System.Windows.Input;
+using ClipForge.Core;
+
+namespace ClipForge.App;
+
+/// <summary>
+/// The command-palette overlay: Ctrl+Shift+V summons it, typing fuzzy-filters history
+/// instantly, Enter pastes, Esc (or focus loss) dismisses. Never nags, never blocks.
+/// </summary>
+public partial class OverlayWindow : Window
+{
+    private readonly IClipStore _store;
+    private readonly int _cacheSize;
+    private List<Clip> _all = new();
+
+    /// <summary>Raised when the user picks a clip. The handler pastes it.</summary>
+    public event Func<Clip, Task>? PasteRequested;
+
+    public OverlayWindow(IClipStore store, int cacheSize)
+    {
+        _store = store;
+        _cacheSize = cacheSize;
+        InitializeComponent();
+    }
+
+    public void Toggle()
+    {
+        if (IsVisible) HideOverlay();
+        else ShowOverlay();
+    }
+
+    public async void ShowOverlay()
+    {
+        try
+        {
+            _all = (await _store.GetRecentAsync(_cacheSize)).ToList();
+        }
+        catch
+        {
+            _all = new List<Clip>();
+        }
+
+        searchBox.Text = string.Empty;
+        ApplyFilter(string.Empty);
+        Position();
+
+        Show();
+        Activate();
+        searchBox.Focus();
+        Keyboard.Focus(searchBox);
+    }
+
+    public void HideOverlay()
+    {
+        if (IsVisible) Hide();
+    }
+
+    /// <summary>Called when a new clip is captured while the overlay is open.</summary>
+    public void NotifyClipAdded(Clip clip)
+    {
+        if (!IsVisible) return;
+        Dispatcher.Invoke(() =>
+        {
+            // Keep pinned-first ordering consistent with GetRecentAsync.
+            int idx = _all.FindIndex(c => !c.Pinned);
+            if (idx < 0) _all.Add(clip);
+            else _all.Insert(idx, clip);
+            ApplyFilter(searchBox.Text);
+        });
+    }
+
+    private void Position()
+    {
+        var area = SystemParameters.WorkArea;
+        Left = area.Left + (area.Width - Width) / 2;
+        Top = area.Top + area.Height * 0.16;
+    }
+
+    private void ApplyFilter(string query)
+    {
+        var ranked = FuzzyMatcher.FilterAndRank(_all, query, 200);
+        clipsList.ItemsSource = ranked.Select(c => new ClipItem(c)).ToList();
+        if (clipsList.Items.Count > 0)
+            clipsList.SelectedIndex = 0;
+        countText.Text = $"{clipsList.Items.Count} clip{(clipsList.Items.Count == 1 ? string.Empty : "s")}";
+    }
+
+    private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        watermark.Visibility = string.IsNullOrEmpty(searchBox.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
+        ApplyFilter(searchBox.Text);
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Escape:
+                HideOverlay();
+                e.Handled = true;
+                break;
+            case Key.Enter:
+                PasteSelected();
+                e.Handled = true;
+                break;
+            case Key.Down:
+                MoveSelection(1);
+                e.Handled = true;
+                break;
+            case Key.Up:
+                MoveSelection(-1);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void MoveSelection(int delta)
+    {
+        if (clipsList.Items.Count == 0) return;
+        int next = Math.Clamp(clipsList.SelectedIndex + delta, 0, clipsList.Items.Count - 1);
+        clipsList.SelectedIndex = next;
+        clipsList.ScrollIntoView(clipsList.SelectedItem);
+    }
+
+    private void ClipsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        PasteSelected();
+    }
+
+    private void PasteSelected()
+    {
+        if (clipsList.SelectedItem is ClipItem item)
+            PasteRequested?.Invoke(item.Clip); // handler hides the overlay, then pastes
+    }
+
+    private void Window_Deactivated(object sender, EventArgs e)
+    {
+        // Clicking away dismisses — the picker never traps the user mid-flow.
+        HideOverlay();
+    }
+}

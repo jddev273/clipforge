@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+obj/
+out/
+dist/
+publish/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!**/[Pp]ackages/[Bb]uild/
+
+# Test results
+TestResults/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local scratch (verification harness lives here, not for commit)
+scratch/

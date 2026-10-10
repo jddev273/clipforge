@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{FDCCC91E-C57B-4D88-A093-D4F034A00378}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClipForge.Core", "src\ClipForge.Core\ClipForge.Core.csproj", "{1D882348-3C4A-48FA-9C37-45B6607AD94C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClipForge.App", "src\ClipForge.App\ClipForge.App.csproj", "{456538AE-B06E-4460-9B34-DA7FD6B2F0CF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1D882348-3C4A-48FA-9C37-45B6607AD94C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D882348-3C4A-48FA-9C37-45B6607AD94C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D882348-3C4A-48FA-9C37-45B6607AD94C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D882348-3C4A-48FA-9C37-45B6607AD94C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{456538AE-B06E-4460-9B34-DA7FD6B2F0CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{456538AE-B06E-4460-9B34-DA7FD6B2F0CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{456538AE-B06E-4460-9B34-DA7FD6B2F0CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{456538AE-B06E-4460-9B34-DA7FD6B2F0CF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1D882348-3C4A-48FA-9C37-45B6607AD94C} = {FDCCC91E-C57B-4D88-A093-D4F034A00378}
+		{456538AE-B06E-4460-9B34-DA7FD6B2F0CF} = {FDCCC91E-C57B-4D88-A093-D4F034A00378}
+	EndGlobalSection
+EndGlobal

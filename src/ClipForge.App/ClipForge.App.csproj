@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <!-- Compile-only on non-Windows dev machines (Linux CI/VM): no WPF runtime needed to build. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>ClipForge</AssemblyName>
+    <Version>0.1.0</Version>
+    <Description>ClipForge — the clipboard manager rebuilt for 2026. Free, fast, beautiful.</Description>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ClipForge.Core\ClipForge.Core.csproj" />
+  </ItemGroup>
+
+</Project>

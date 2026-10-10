@@ -1,0 +1,76 @@
+<Window x:Class="ClipForge.App.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ClipForge" Width="680" Height="460"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
+        PreviewKeyDown="Window_PreviewKeyDown" Deactivated="Window_Deactivated">
+    <Border CornerRadius="14" Background="#1E1E2E" BorderBrush="#3A3A52" BorderThickness="1" Margin="10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.55" Color="Black"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- search -->
+            <Grid Grid.Row="0" Margin="16,16,16,8">
+                <TextBox x:Name="searchBox" FontSize="17" Padding="12,10"
+                         Background="#2A2A40" Foreground="#F0F0FA"
+                         BorderThickness="0" CaretBrush="#F0F0FA"
+                         SelectionBrush="#3D3D66"
+                         TextChanged="SearchBox_TextChanged"/>
+                <TextBlock x:Name="watermark" Text="Search clips…  (fuzzy — type anything)"
+                           FontSize="17" Padding="12,10" Foreground="#6E6E8C"
+                           IsHitTestVisible="False"/>
+            </Grid>
+
+            <!-- history -->
+            <ListBox x:Name="clipsList" Grid.Row="1" Background="Transparent" BorderThickness="0"
+                     Margin="8,0,8,4" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     MouseDoubleClick="ClipsList_MouseDoubleClick">
+                <ListBox.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3D3D66"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2E2E4E"/>
+                </ListBox.Resources>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="10,8"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontSize="20"
+                                       Margin="0,0,12,0" VerticalAlignment="Top"/>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding Preview}" FontSize="14" Foreground="#EDEDF7"
+                                           TextWrapping="Wrap" MaxHeight="62" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="#8A8AA5" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- footer -->
+            <Border Grid.Row="2" BorderBrush="#2E2E44" BorderThickness="0,1,0,0" Margin="0,4,0,0">
+                <DockPanel Margin="16,8,16,10">
+                    <TextBlock Text="↵ paste · double-click paste · esc dismiss"
+                               FontSize="11" Foreground="#6E6E8C"/>
+                    <TextBlock x:Name="countText" FontSize="11" Foreground="#6E6E8C"
+                               DockPanel.Dock="Right"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
