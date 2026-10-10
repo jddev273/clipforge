@@ -6,13 +6,17 @@ ClipForge is a native Windows clipboard manager: everything you copy (text, imag
 
 ## Status: v0.1.0 MVP (2026-10-10)
 
-- [x] Clipboard capture — text, HTML, images (PNG), file lists — via `AddClipboardFormatListener`
-- [x] Local SQLite history (`%LOCALAPPDATA%/ClipForge/clips.db`), survives reboot
-- [x] Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean)
-- [x] Instant fuzzy search as you type (subsequence matcher with word-boundary/consecutive bonuses)
-- [x] `Enter` pastes the selected clip, `Esc`/click-away dismisses
-- [x] **Privacy-by-default in the capture path:** secret auto-detection (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments) is never stored; password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
-- [x] Trust engineering: delayed retry on locked clipboard (never silently miss a copy), duplicate suppression, self-paste suppression, explorer-restart tray recovery, zero nag dialogs
+Verified on real Windows 10/11 2026-10-10 are marked ✅ — the rest compiles
+clean (0 warnings, strict analyzer pack) and is implemented, but hasn't been
+seen running yet. Nothing is marked working until it works.
+
+- [x] ✅ Clipboard capture — text, HTML, images (PNG), file lists — via `AddClipboardFormatListener`
+- [x] ✅ Local SQLite history (`%LOCALAPPDATA%/ClipForge/clips.db`), survives reboot
+- [x] ✅ **Privacy-by-default in the capture path:** secret auto-detection (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments) is never stored; password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
+- [x] ✅ Trust engineering: delayed retry on locked clipboard (never silently miss a copy), duplicate suppression, self-paste suppression, explorer-restart tray recovery, zero nag dialogs
+- [x] Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean) — implemented, not yet seen running
+- [x] Instant fuzzy search as you type (subsequence matcher with word-boundary/consecutive bonuses) — implemented, not yet seen running
+- [x] `Enter` pastes the selected clip, `Esc`/click-away dismisses — implemented, not yet seen running
 
 **Not yet (iteration order):** search highlighting → pinning + multi-paste → paste-as-plain-text + case transforms → snippets with variables → privacy demo beat → semantic search → OCR on images → installer/polish. See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
 
@@ -22,7 +26,7 @@ ClipForge is a native Windows clipboard manager: everything you copy (text, imag
 
 **Requirements:** Windows 10/11 x64, .NET 8 Desktop Runtime.
 
-1. Download `ClipForge.exe` from [Releases](https://github.com/jddev273/clipforge/releases) (single file).
+1. Grab the latest publish from [Releases](https://github.com/jddev273/clipforge/releases) (framework-dependent — needs the .NET 8 Desktop Runtime, already listed above), or build from source below.
 2. Run it — it lives in the tray. Copy anything.
 3. Press `Ctrl+Shift+V` → type to filter → `Enter` to paste.
 
@@ -31,7 +35,8 @@ ClipForge is a native Windows clipboard manager: everything you copy (text, imag
 ```powershell
 # Windows, .NET 8 SDK
 dotnet build ClipForge.sln -c Release
-dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release -r win-x64 --self-contained -o dist
+# Fast publish profile: framework-dependent + ReadyToRun (~3MB, ~5s cold start)
+dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release /p:PublishProfile=Fast
 ```
 
 The solution also compiles on Linux/macOS (`EnableWindowsTargeting`) for CI — it just can't *run* there.
