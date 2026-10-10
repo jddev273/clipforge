@@ -10,14 +10,28 @@ namespace ClipForge.Core;
 public sealed record CapturedClip(
     ClipType Type,
     string? Text,
+    // CA1819 suppressed by design: immutable payload snapshot, never mutated after capture.
+#pragma warning disable CA1819
     byte[]? ImagePng,
-    string[]? FilePaths,
+#pragma warning restore CA1819
+    IReadOnlyList<string>? FilePaths,
     string? SourceApp,
     int? ImageWidth,
     int? ImageHeight,
     DateTimeOffset CapturedAt)
 {
-    private static readonly Regex HtmlTag = new("<[^>]+>", RegexOptions.Compiled);
+    private static readonly Regex HtmlTag =
+        // MA0009: match timeout bounds catastrophic backtracking on hostile input.
+        new("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// Corruption canary for the switch discard arms. The compiler forces us to handle
+    /// unnamed enum values; every producer only emits named members, so this is unreachable
+    /// unless a value was corrupted (e.g. a bad cast from storage). Generic so the discard
+    /// arms stay expression-shaped without a <c>throw</c> directly in a property getter.
+    /// </summary>
+    private T UnknownClipType<T>() =>
+        throw new InvalidOperationException($"Invalid ClipType value: {(int)Type}.");
 
     public string PreviewText => Type switch
     {
@@ -25,7 +39,10 @@ public sealed record CapturedClip(
         ClipType.Html => Truncate(CollapseWhitespace(HtmlTag.Replace(Text ?? string.Empty, " "))),
         ClipType.Files => FilePreview(FilePaths),
         ClipType.Image => ImageWidth.HasValue ? $"Image {ImageWidth}\u00d7{ImageHeight}" : "Image",
-        _ => string.Empty
+        // The discard arm is mandatory: the compiler must account for unnamed enum values
+        // ((ClipType)4). All producers are internal and only emit named members, so reaching
+        // it means corruption — fail fast instead of silently misbehaving.
+        _ => UnknownClipType<string>()
     };
 
     public string ContentHash
@@ -36,7 +53,8 @@ public sealed record CapturedClip(
             {
                 ClipType.Image => ImagePng ?? Array.Empty<byte>(),
                 ClipType.Files => Encoding.UTF8.GetBytes(string.Join('\n', FilePaths ?? Array.Empty<string>())),
-                _ => Encoding.UTF8.GetBytes(Text ?? string.Empty)
+                ClipType.Text or ClipType.Html => Encoding.UTF8.GetBytes(Text ?? string.Empty),
+                _ => UnknownClipType<byte[]>() // see note on PreviewText: corruption canary
             };
             var hash = SHA256.HashData(payload);
             return $"{Type}:{Convert.ToHexString(hash)}";
@@ -50,7 +68,8 @@ public sealed record CapturedClip(
         {
             ClipType.Files => string.Join('\n', FilePaths ?? Array.Empty<string>()),
             ClipType.Image => null,
-            _ => Text
+            ClipType.Text or ClipType.Html => Text,
+            _ => UnknownClipType<string?>() // see note on PreviewText: corruption canary
         },
         ImageData = Type == ClipType.Image ? ImagePng : null,
         PreviewText = PreviewText,
@@ -60,16 +79,17 @@ public sealed record CapturedClip(
         ContentHash = ContentHash
     };
 
-    private static string FilePreview(string[]? paths)
+    private static string FilePreview(IReadOnlyList<string>? paths)
     {
-        if (paths is null || paths.Length == 0) return "Files";
+        if (paths is null || paths.Count == 0) return "Files";
         var names = paths.Select(Path.GetFileName).Take(2);
-        var more = paths.Length > 2 ? $", +{paths.Length - 2} more" : string.Empty;
-        return $"{paths.Length} file{(paths.Length == 1 ? string.Empty : "s")}: {string.Join(", ", names)}{more}";
+        var more = paths.Count > 2 ? $", +{paths.Count - 2} more" : string.Empty;
+        return $"{paths.Count} file{(paths.Count == 1 ? string.Empty : "s")}: {string.Join(", ", names)}{more}";
     }
 
     private static string CollapseWhitespace(string s) =>
-        Regex.Replace(s, @"\s+", " ").Trim();
+        // MA0009: match timeout on the static overload too.
+        Regex.Replace(s, @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
 
     private static string Truncate(string s, int max = 200) =>
         s.Length <= max ? s : s[..max].TrimEnd() + "\u2026";

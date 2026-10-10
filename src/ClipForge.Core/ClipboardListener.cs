@@ -1,7 +1,14 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using ClipForge.Core.Native;
 using static ClipForge.Core.Native.NativeMethods;
+
+// CA2216 suppressed by design: the owned HWND is a message-only window tied to the
+// listener thread's lifetime, and App.OnExit always disposes this listener. A finalizer
+// would tear the window down on the GC thread — the wrong thread for window teardown —
+// making the "safe" pattern actively harmful here.
+#pragma warning disable CA2216
 
 namespace ClipForge.Core;
 
@@ -13,13 +20,13 @@ namespace ClipForge.Core;
 [SupportedOSPlatform("windows")]
 public sealed class ClipboardListener : IDisposable
 {
-    public event EventHandler<CapturedClip>? ClipCaptured;
+    public event EventHandler<ClipCapturedEventArgs>? ClipCaptured;
 
     private Thread? _thread;
     private uint _threadId;
-    private IntPtr _hwnd = IntPtr.Zero;
+    private Hwnd _hwnd = Hwnd.Null;
     private IntPtr _origProc = IntPtr.Zero;
-    private readonly WndProcDelegate _wndProc;
+    private readonly WindowProc _wndProc;
     private readonly ManualResetEventSlim _ready = new(false);
     private DateTime _suppressUntilUtc = DateTime.MinValue;
     private bool _disposed;
@@ -43,7 +50,7 @@ public sealed class ClipboardListener : IDisposable
         _thread.Start();
         if (!_ready.Wait(TimeSpan.FromSeconds(10)))
             throw new TimeoutException("Clipboard listener thread did not start.");
-        if (_hwnd == IntPtr.Zero)
+        if (_hwnd.IsNull)
             throw new InvalidOperationException("Clipboard listener window was not created.");
     }
 
@@ -53,6 +60,8 @@ public sealed class ClipboardListener : IDisposable
     /// </summary>
     public IDisposable SuppressCapture(TimeSpan duration)
     {
+        if (duration < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(duration), "Capture suppression cannot be negative.");
         _suppressUntilUtc = DateTime.UtcNow + duration;
         return new Suppressor(this, duration);
     }
@@ -73,19 +82,20 @@ public sealed class ClipboardListener : IDisposable
             // Only clear if nobody extended the window since.
             if (_owner._suppressUntilUtc <= _until + TimeSpan.FromMilliseconds(50))
                 _owner._suppressUntilUtc = DateTime.MinValue;
+            GC.SuppressFinalize(this);
         }
     }
 
     private void MessageLoop()
     {
         _threadId = GetCurrentThreadId();
-        _hwnd = CreateWindowExW(0, "STATIC", "ClipForgeListener", 0, 0, 0, 0, 0,
-            HWND_MESSAGE, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        if (_hwnd != IntPtr.Zero)
+        _hwnd = Hwnd.FromIntPtr(CreateWindowExW(0, "STATIC", "ClipForgeListener", 0, 0, 0, 0, 0,
+            HWND_MESSAGE, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero));
+        if (!_hwnd.IsNull)
         {
-            _origProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC,
+            _origProc = SetWindowLongPtr(_hwnd.ToIntPtr(), GWLP_WNDPROC,
                 Marshal.GetFunctionPointerForDelegate(_wndProc));
-            AddClipboardFormatListener(_hwnd);
+            AddClipboardFormatListener(_hwnd.ToIntPtr());
         }
         _ready.Set();
 
@@ -95,20 +105,26 @@ public sealed class ClipboardListener : IDisposable
             DispatchMessageW(ref msg);
         }
 
-        if (_hwnd != IntPtr.Zero)
+        if (!_hwnd.IsNull)
         {
-            RemoveClipboardFormatListener(_hwnd);
-            DestroyWindow(_hwnd);
-            _hwnd = IntPtr.Zero;
+            RemoveClipboardFormatListener(_hwnd.ToIntPtr());
+            DestroyWindow(_hwnd.ToIntPtr());
+            _hwnd = Hwnd.Null;
         }
     }
 
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        // Trust boundary: this proc is subclassed onto exactly one window — ours.
+        // A message for any other window means the subclassing went wrong.
+        Debug.Assert(hWnd == _hwnd.ToIntPtr(), "WndProc received a message for a foreign window.");
+
         if (msg == WM_CLIPBOARDUPDATE)
         {
             try { OnClipboardUpdate(); }
+            #pragma warning disable CA1031 // why: the capture callback must never crash the listener message loop.
             catch { /* never let a capture crash the message loop */ }
+            #pragma warning restore CA1031
             return IntPtr.Zero;
         }
         return DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -141,8 +157,27 @@ public sealed class ClipboardListener : IDisposable
         }
 
         if (captured is not null)
-            ClipCaptured?.Invoke(this, captured);
+        {
+            // Trust-core invariants: what we detected is what we captured, and the
+            // payload is non-empty and consistent with its type. A violation means the
+            // clipboard changed mid-read or a capture bug — either way, don't persist it.
+            Debug.Assert(captured.Type == type.Value, "Captured type diverged from detected type.");
+            Debug.Assert(HasPayload(captured), "Captured clip has an empty payload for its type.");
+            ClipCaptured?.Invoke(this, new ClipCapturedEventArgs(captured));
+        }
     }
+
+    /// <summary>
+    /// Payload-shape check for the trust core: every captured clip must carry a
+    /// non-empty payload consistent with its declared type.
+    /// </summary>
+    private static bool HasPayload(CapturedClip c) => c.Type switch
+    {
+        ClipType.Text or ClipType.Html => !string.IsNullOrEmpty(c.Text),
+        ClipType.Image => c.ImagePng is { Length: > 0 },
+        ClipType.Files => c.FilePaths is { Count: > 0 },
+        _ => false
+    };
 
     private static CapturedClip? TryCapture(ClipType type)
     {
@@ -175,3 +210,5 @@ public sealed class ClipboardListener : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+
+#pragma warning restore CA2216

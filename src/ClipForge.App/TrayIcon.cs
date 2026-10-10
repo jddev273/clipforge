@@ -2,6 +2,10 @@ using System.Runtime.InteropServices;
 using ClipForge.Core.Native;
 using static ClipForge.Core.Native.NativeMethods;
 
+// CA2216: the message-only window must be torn down on the UI thread that pumps its
+// messages (the WPF dispatcher). A finalizer would destroy it on the GC thread.
+#pragma warning disable CA2216
+
 namespace ClipForge.App;
 
 /// <summary>
@@ -42,52 +46,63 @@ public sealed class TrayIcon : IDisposable
         public IntPtr hBalloonIcon;
     }
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATA lpData);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr CreatePopupMenu();
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyMenu(IntPtr hMenu);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool AppendMenuW(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string lpNewItem);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint TrackPopupMenu(IntPtr hMenu, uint uFlags, int x, int y,
         int nReserved, IntPtr hWnd, IntPtr prcRect);
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessageW(string lpString);
 
-    private readonly WndProcDelegate _wndProc;
+    private readonly WindowProc _wndProc;
     private readonly Action _showAction;
     private readonly Action _exitAction;
-    private readonly IntPtr _hwnd;
+    private readonly Hwnd _hwnd;
     private readonly uint _taskbarCreatedMsg;
     private bool _disposed;
 
     public TrayIcon(Action showAction, Action exitAction)
     {
+        ArgumentNullException.ThrowIfNull(showAction);
+        ArgumentNullException.ThrowIfNull(exitAction);
         _showAction = showAction;
         _exitAction = exitAction;
         _wndProc = WndProc;
         _taskbarCreatedMsg = RegisterWindowMessageW("TaskbarCreated");
 
         // Message-only window on the UI thread; the WPF dispatcher pumps messages.
-        _hwnd = CreateWindowExW(0, "STATIC", "ClipForgeTray", 0, 0, 0, 0, 0,
-            HWND_MESSAGE, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProc));
+        _hwnd = Hwnd.FromIntPtr(CreateWindowExW(0, "STATIC", "ClipForgeTray", 0, 0, 0, 0, 0,
+            HWND_MESSAGE, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero));
+        SetWindowLongPtr(_hwnd.ToIntPtr(), GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProc));
 
         AddIcon();
     }
@@ -97,7 +112,7 @@ public sealed class TrayIcon : IDisposable
         var data = new NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>(),
-            hWnd = _hwnd,
+            hWnd = _hwnd.ToIntPtr(),
             uID = 1,
             uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage = WM_TRAY,
@@ -133,8 +148,8 @@ public sealed class TrayIcon : IDisposable
             AppendMenuW(menu, 0, (UIntPtr)1, "Show ClipForge");
             AppendMenuW(menu, 0, (UIntPtr)2, "E&xit");
             GetCursorPos(out var pt);
-            SetForegroundWindow(_hwnd); // required so the menu dismisses correctly
-            uint cmd = TrackPopupMenu(menu, 0x0100 | 0x0002, pt.X, pt.Y, 0, _hwnd, IntPtr.Zero);
+            SetForegroundWindow(_hwnd.ToIntPtr()); // required so the menu dismisses correctly
+            uint cmd = TrackPopupMenu(menu, 0x0100 | 0x0002, pt.X, pt.Y, 0, _hwnd.ToIntPtr(), IntPtr.Zero);
             if (cmd == 1) _showAction();
             else if (cmd == 2) _exitAction();
         }
@@ -148,10 +163,12 @@ public sealed class TrayIcon : IDisposable
         var data = new NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>(),
-            hWnd = _hwnd,
+            hWnd = _hwnd.ToIntPtr(),
             uID = 1
         };
         Shell_NotifyIconW(NIM_DELETE, ref data);
-        DestroyWindow(_hwnd);
+        DestroyWindow(_hwnd.ToIntPtr());
     }
 }
+
+#pragma warning restore CA2216

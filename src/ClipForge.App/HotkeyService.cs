@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using ClipForge.Core.Native;
 using static ClipForge.Core.Native.NativeMethods;
 
 namespace ClipForge.App;
@@ -13,19 +14,20 @@ public sealed class HotkeyService : IDisposable
     private const uint VkV = 0x56;
 
     private readonly HwndSource _source;
-    private readonly IntPtr _hwnd;
+    private readonly Hwnd _hwnd;
     private bool _disposed;
 
     public event EventHandler? Pressed;
 
     public HotkeyService(Window window)
     {
+        ArgumentNullException.ThrowIfNull(window);
         var helper = new WindowInteropHelper(window);
         helper.EnsureHandle();
-        _hwnd = helper.Handle;
-        _source = HwndSource.FromHwnd(_hwnd) ?? throw new InvalidOperationException("No HWND source.");
+        _hwnd = Hwnd.FromIntPtr(helper.Handle);
+        _source = HwndSource.FromHwnd(_hwnd.ToIntPtr()) ?? throw new InvalidOperationException("No HWND source.");
         _source.AddHook(WndProc);
-        if (!RegisterHotKey(_hwnd, HotkeyId, Modifiers, VkV))
+        if (!RegisterHotKey(_hwnd.ToIntPtr(), HotkeyId, Modifiers, VkV))
         {
             int err = Marshal.GetLastWin32Error();
             throw new InvalidOperationException(
@@ -48,6 +50,6 @@ public sealed class HotkeyService : IDisposable
         if (_disposed) return;
         _disposed = true;
         _source.RemoveHook(WndProc);
-        UnregisterHotKey(_hwnd, HotkeyId);
+        UnregisterHotKey(_hwnd.ToIntPtr(), HotkeyId);
     }
 }

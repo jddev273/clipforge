@@ -11,13 +11,16 @@ internal static class ForegroundApp
         {
             var hwnd = NativeMethods.GetForegroundWindow();
             if (hwnd == IntPtr.Zero) return null;
-            NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+            // A failed lookup leaves pid undefined — bail explicitly instead of probing PID 0.
+            if (NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid) == 0) return null;
             using var proc = Process.GetProcessById((int)pid);
             return proc.ProcessName;
         }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch
         {
             return null;
         }
+        #pragma warning restore CA1031
     }
 }

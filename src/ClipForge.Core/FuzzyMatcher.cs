@@ -9,6 +9,8 @@ public static class FuzzyMatcher
 {
     public static int? Score(string query, string target)
     {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(target);
         if (string.IsNullOrEmpty(query)) return 0;
         if (string.IsNullOrEmpty(target)) return null;
 
@@ -49,6 +51,9 @@ public static class FuzzyMatcher
     /// <summary>Filters and ranks clips by fuzzy score over preview + source app. Empty query returns input order.</summary>
     public static IReadOnlyList<Clip> FilterAndRank(IEnumerable<Clip> clips, string query, int limit = 100)
     {
+        ArgumentNullException.ThrowIfNull(clips);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         if (string.IsNullOrWhiteSpace(query))
             return clips.Take(limit).ToList();
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClipForge.Core;
 
 namespace ClipForge.App;
@@ -12,6 +13,7 @@ public sealed class ClipItem
 
     public ClipItem(Clip clip)
     {
+        ArgumentNullException.ThrowIfNull(clip);
         Clip = clip;
         Glyph = clip.Type switch
         {
@@ -19,7 +21,8 @@ public sealed class ClipItem
             ClipType.Html => "\U0001F310",   // 🌐
             ClipType.Image => "\U0001F5BC",  // 🖼
             ClipType.Files => "\U0001F4C1",  // 📁
-            _ => "\U0001F4C4"
+            // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.
+            _ => throw new InvalidOperationException($"Invalid ClipType value: {(int)clip.Type}.")
         };
         Preview = clip.PreviewText;
         Meta = $"{clip.SourceApp ?? "Unknown app"} · {Ago(clip.CreatedAt)}";
@@ -32,6 +35,7 @@ public sealed class ClipItem
         if (d < TimeSpan.FromHours(1)) return $"{(int)d.TotalMinutes}m ago";
         if (d < TimeSpan.FromDays(1)) return $"{(int)d.TotalHours}h ago";
         if (d < TimeSpan.FromDays(7)) return $"{(int)d.TotalDays}d ago";
-        return t.ToString("MMM d");
+        // User-facing date: honor the user's locale for month abbreviations.
+        return t.ToString("MMM d", CultureInfo.CurrentCulture);
     }
 }

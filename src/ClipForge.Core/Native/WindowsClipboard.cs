@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -77,15 +78,16 @@ public static class WindowsClipboard
         {
             var h = NativeMethods.GetClipboardData(NativeMethods.CF_HDROP);
             if (h == IntPtr.Zero) return false;
-            uint count = NativeMethods.DragQueryFileW(h, 0xFFFFFFFF, null, 0);
+            uint count = NativeMethods.DragQueryFileW(h, 0xFFFFFFFF, Array.Empty<char>(), 0);
             if (count == 0) return false;
             var list = new List<string>((int)count);
-            var sb = new StringBuilder(1024);
+            var buffer = new char[1024];
             for (uint i = 0; i < count; i++)
             {
-                sb.Clear();
-                if (NativeMethods.DragQueryFileW(h, i, sb, (uint)sb.Capacity) > 0)
-                    list.Add(sb.ToString());
+                // Returns the length excluding the null terminator; >= capacity means truncated.
+                uint len = NativeMethods.DragQueryFileW(h, i, buffer, (uint)buffer.Length);
+                if (len > 0 && len < buffer.Length)
+                    list.Add(new string(buffer, 0, (int)len));
             }
             result = list.ToArray();
             return result.Length > 0;
@@ -139,6 +141,7 @@ public static class WindowsClipboard
 
     public static bool TrySetText(string text)
     {
+        ArgumentNullException.ThrowIfNull(text);
         try
         {
             return WithClipboardOpen(() =>
@@ -155,11 +158,14 @@ public static class WindowsClipboard
                 // NOTE: ownership of h transfers to the clipboard; do not free.
             });
         }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
+        #pragma warning restore CA1031
     }
 
-    public static bool TrySetFileList(string[] paths)
+    public static bool TrySetFileList(IReadOnlyList<string> paths)
     {
+        ArgumentNullException.ThrowIfNull(paths);
         try
         {
             return WithClipboardOpen(() =>
@@ -188,11 +194,14 @@ public static class WindowsClipboard
                 return NativeMethods.SetClipboardData(NativeMethods.CF_HDROP, h) != IntPtr.Zero;
             });
         }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
+        #pragma warning restore CA1031
     }
 
     public static bool TrySetImage(byte[] pngBytes)
     {
+        ArgumentNullException.ThrowIfNull(pngBytes);
         try
         {
             using var src = new Bitmap(new MemoryStream(pngBytes));
@@ -238,7 +247,9 @@ public static class WindowsClipboard
             }
             finally { bmp.UnlockBits(data); }
         }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
+        #pragma warning restore CA1031
     }
 
     // ---------------- internals ----------------
@@ -258,7 +269,9 @@ public static class WindowsClipboard
                 try { return action(); }
                 finally { NativeMethods.CloseClipboard(); }
             }
+            #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
             catch { return false; }
+            #pragma warning restore CA1031
         }
         return false;
     }
@@ -280,7 +293,8 @@ public static class WindowsClipboard
         i += key.Length;
         int j = i;
         while (j < header.Length && char.IsDigit(header[j])) j++;
-        return int.TryParse(header[i..j], out int v) ? v : -1;
+        // MA0011: explicit provider — the span is ASCII digits, culture must not matter.
+        return int.TryParse(header.AsSpan(i, j - i), CultureInfo.InvariantCulture, out int v) ? v : -1;
     }
 
     private static Bitmap? DibToBitmap(IntPtr p, out int width, out int height)
@@ -301,6 +315,10 @@ public static class WindowsClipboard
             int stride = ((width * bitCount + 31) / 32) * 4;
             bool bottomUp = rawHeight > 0;
 
+            // Validate depth BEFORE allocating: the only non-exceptional failure after this
+            // point is gone, so the bitmap below has exactly one owner on every path.
+            if (bitCount is not (32 or 24)) return null; // unsupported depth for MVP
+
             var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             var rect = new Rectangle(0, 0, width, height);
             var data = bmp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
@@ -317,7 +335,7 @@ public static class WindowsClipboard
                         case 32:
                             Buffer.BlockCopy(row, 0, out32, 0, width * 4);
                             break;
-                        case 24:
+                        default: // 24 — pre-validated above
                             for (int x = 0; x < width; x++)
                             {
                                 out32[x * 4] = row[x * 3];
@@ -326,8 +344,6 @@ public static class WindowsClipboard
                                 out32[x * 4 + 3] = 255;
                             }
                             break;
-                        default:
-                            return null; // unsupported depth for MVP
                     }
                     Marshal.Copy(out32, 0, data.Scan0 + y * data.Stride, width * 4);
                 }
@@ -335,6 +351,8 @@ public static class WindowsClipboard
             finally { bmp.UnlockBits(data); }
             return bmp;
         }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return null; }
+        #pragma warning restore CA1031
     }
 }

@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- Strictness hardening (2026-10-10): as close to SPARK Ada as C# gets. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <UseWPF>true</UseWPF>
     <!-- Compile-only on non-Windows dev machines (Linux CI/VM): no WPF runtime needed to build. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -19,6 +23,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClipForge.Core\ClipForge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.297">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

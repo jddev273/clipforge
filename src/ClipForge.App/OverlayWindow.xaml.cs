@@ -2,6 +2,9 @@ using System.Windows;
 using System.Windows.Input;
 using ClipForge.Core;
 
+// CA2007: WPF UI thread affinity — continuations touch UI objects and must keep the context.
+#pragma warning disable CA2007
+
 namespace ClipForge.App;
 
 /// <summary>
@@ -15,10 +18,12 @@ public partial class OverlayWindow : Window
     private List<Clip> _all = new();
 
     /// <summary>Raised when the user picks a clip. The handler pastes it.</summary>
-    public event Func<Clip, Task>? PasteRequested;
+    public event EventHandler<PasteEventArgs>? PasteRequested;
 
     public OverlayWindow(IClipStore store, int cacheSize)
     {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentOutOfRangeException.ThrowIfLessThan(cacheSize, 1);
         _store = store;
         _cacheSize = cacheSize;
         InitializeComponent();
@@ -36,10 +41,13 @@ public partial class OverlayWindow : Window
         {
             _all = (await _store.GetRecentAsync(_cacheSize)).ToList();
         }
+        // CA1031: startup best-effort — a fault here is diagnosed via Debug output, never allowed to take down the app.
+#pragma warning disable CA1031
         catch
         {
             _all = new List<Clip>();
         }
+#pragma warning restore CA1031
 
         searchBox.Text = string.Empty;
         ApplyFilter(string.Empty);
@@ -59,6 +67,7 @@ public partial class OverlayWindow : Window
     /// <summary>Called when a new clip is captured while the overlay is open.</summary>
     public void NotifyClipAdded(Clip clip)
     {
+        ArgumentNullException.ThrowIfNull(clip);
         if (!IsVisible) return;
         Dispatcher.Invoke(() =>
         {
@@ -132,7 +141,7 @@ public partial class OverlayWindow : Window
     private void PasteSelected()
     {
         if (clipsList.SelectedItem is ClipItem item)
-            PasteRequested?.Invoke(item.Clip); // handler hides the overlay, then pastes
+            PasteRequested?.Invoke(this, new PasteEventArgs(item.Clip)); // handler hides the overlay, then pastes
     }
 
     private void Window_Deactivated(object sender, EventArgs e)
@@ -141,3 +150,5 @@ public partial class OverlayWindow : Window
         HideOverlay();
     }
 }
+
+#pragma warning restore CA2007

@@ -18,15 +18,17 @@ public static class SecretDetector
         OtpCode
     }
 
+    // MA0009: every regex carries a 1s match timeout (DoS bound on hostile clipboard text).
+    // MA0023: ExplicitCapture — no code reads capture groups (IsMatch/Matches/Value only).
     private static readonly Regex PasswordAssign =
-        new(@"\bpasswou?rd\b\s*[:=]\s*\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new(@"\bpasswou?rd\b\s*[:=]\s*\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     private static readonly Regex BearerToken =
-        new(@"\bbearer\s+[A-Za-z0-9\-._~+/]{20,}={0,2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new(@"\bbearer\s+[A-Za-z0-9\-._~+/]{20,}={0,2}\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     private static readonly Regex LabeledSecret =
         new(@"\b(api[_-]?key|api[_-]?secret|client[_-]?secret|access[_-]?token|auth[_-]?token)\b\s*[:=]\s*[""']?([\w\-.~+/]{16,})[""']?",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     private static readonly string[] KeyPrefixes =
     {
@@ -35,12 +37,12 @@ public static class SecretDetector
     };
 
     private static readonly Regex CardCandidate =
-        new(@"\b\d(?:[ \-]?\d){11,18}\b", RegexOptions.Compiled);
+        new(@"\b\d(?:[ \-]?\d){11,18}\b", RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     private static readonly Regex OtpContext =
         new(@"(?i)(otp|2fa|two[ -]?factor|verification|verify|security)\W{0,30}code\W{0,10}(\d{4,8})\b|" +
             @"(?i)\b(your|the)\s+(verification\s+)?code\s+(is\s+)?(\d{4,8})\b",
-            RegexOptions.Compiled);
+            RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     /// <summary>Returns the kind of secret found, or null when the text looks safe to store.</summary>
     public static SecretKind? Detect(string? text)
