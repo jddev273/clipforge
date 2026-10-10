@@ -10,8 +10,10 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>ClipForge</AssemblyName>
     <Description>ClipForge — the clipboard manager rebuilt for 2026. Free, fast, beautiful.</Description>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishDir>publish\</PublishDir>
+    <!-- Publish defaults: framework-dependent + ReadyToRun via the Fast publish profile
+         (Properties/PublishProfiles/Fast.pubxml). The box has the .NET 8 desktop runtime,
+         so self-contained single-file is pure dead weight (was 163MB, ~2min cold start). -->
   </PropertyGroup>
 
   <ItemGroup>
