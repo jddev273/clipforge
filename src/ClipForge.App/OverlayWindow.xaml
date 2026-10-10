@@ -85,7 +85,7 @@
             <!-- footer -->
             <Border Grid.Row="2" BorderBrush="#2E2E44" BorderThickness="0,1,0,0" Margin="0,4,0,0">
                 <DockPanel Margin="16,8,16,10">
-                    <TextBlock Text="↵ paste · double-click paste · esc dismiss"
+                    <TextBlock Text="↵ paste · ctrl+↵ plain text · ctrl+P pin · esc dismiss"
                                FontSize="11" Foreground="#6E6E8C"/>
                     <TextBlock x:Name="countText" FontSize="11" Foreground="#6E6E8C"
                                DockPanel.Dock="Right"/>

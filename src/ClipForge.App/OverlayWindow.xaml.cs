@@ -138,6 +138,10 @@ public partial class OverlayWindow : Window
                 HideOverlay();
                 e.Handled = true;
                 break;
+            case Key.Enter when Keyboard.Modifiers.HasFlag(ModifierKeys.Control):
+                PasteSelected(plainText: true);
+                e.Handled = true;
+                break;
             case Key.Enter:
                 PasteSelected();
                 e.Handled = true;
@@ -213,10 +217,10 @@ public partial class OverlayWindow : Window
         #pragma warning restore CA1031
     }
 
-    private void PasteSelected()
+    private void PasteSelected(bool plainText = false)
     {
         if (clipsList.SelectedItem is ClipItem item)
-            PasteRequested?.Invoke(this, new PasteEventArgs(item.Clip)); // handler hides the overlay, then pastes
+            PasteRequested?.Invoke(this, new PasteEventArgs(item.Clip, plainText)); // handler hides the overlay, then pastes
     }
 
     private void Window_Deactivated(object sender, EventArgs e)

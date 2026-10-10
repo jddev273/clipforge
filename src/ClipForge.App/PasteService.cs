@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using ClipForge.Core;
 using ClipForge.Core.Native;
 using static ClipForge.Core.Native.NativeMethods;
@@ -13,16 +15,10 @@ namespace ClipForge.App;
 /// </summary>
 public static class PasteService
 {
-    public static async Task PasteAsync(Clip clip)
+    public static Task PasteAsync(Clip clip)
     {
         ArgumentNullException.ThrowIfNull(clip);
-
-        // Snapshot current clipboard text so we can put it back afterward (best effort).
-        WindowsClipboard.TryGetText(out string? previousText);
-
-        await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
-
-        bool staged = clip.Type switch
+        return PasteCoreAsync(() => clip.Type switch
         {
             ClipType.Text => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
             ClipType.Html => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
@@ -31,8 +27,45 @@ public static class PasteService
             ClipType.Files => WindowsClipboard.TrySetFileList(clip.FilePaths),
             // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.
             _ => throw new InvalidOperationException($"Invalid ClipType value: {(int)clip.Type}.")
+        });
+    }
+
+    /// <summary>
+    /// Pastes the plain-text rendering of a clip (formatting stripped). Images and
+    /// files have no text form, so they fall back to the rich paste.
+    /// </summary>
+    public static Task PastePlainTextAsync(Clip clip)
+    {
+        ArgumentNullException.ThrowIfNull(clip);
+        string? plain = clip.Type switch
+        {
+            ClipType.Text => clip.Text ?? string.Empty,
+            ClipType.Html => StripHtml(clip.Text ?? string.Empty),
+            ClipType.Rtf => clip.Text ?? string.Empty, // plain-text companion captured alongside the RTF
+            _ => null,
         };
-        if (!staged) return;
+        return plain is null ? PasteAsync(clip) : PasteCoreAsync(() => WindowsClipboard.TrySetText(plain));
+    }
+
+    /// <summary>Best-effort HTML-to-text for paste-as-plain-text (mirrors the capture-side tag strip).</summary>
+    private static string StripHtml(string html)
+    {
+        // MA0009: match timeouts bound hostile input on both passes.
+        string noTags = Regex.Replace(html, "<[^>]+>", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
+        string collapsed = Regex.Replace(noTags, @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
+        return WebUtility.HtmlDecode(collapsed);
+    }
+
+    private static async Task PasteCoreAsync(Func<bool> stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        // Snapshot current clipboard text so we can put it back afterward (best effort).
+        WindowsClipboard.TryGetText(out string? previousText);
+
+        await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
+
+        if (!stage()) return;
 
         SendCtrlV();
         await Task.Delay(500).ConfigureAwait(false);

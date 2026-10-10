@@ -191,7 +191,10 @@ public partial class App : System.Windows.Application, IDisposable
         {
             // Don't re-capture what we're about to paste.
             using var _ = _listener?.SuppressCapture(TimeSpan.FromSeconds(3));
-            await PasteService.PasteAsync(clip).ConfigureAwait(true);
+            if (e.PlainText)
+                await PasteService.PastePlainTextAsync(clip).ConfigureAwait(true);
+            else
+                await PasteService.PasteAsync(clip).ConfigureAwait(true);
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)
