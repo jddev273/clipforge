@@ -1,4 +1,9 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ClipForge.Core;
 
 namespace ClipForge.App;
@@ -6,10 +11,26 @@ namespace ClipForge.App;
 /// <summary>Presentation model for one row in the overlay list.</summary>
 public sealed class ClipItem
 {
+    // Thumbnail cache: rows are rebuilt on every keystroke, so without this each
+    // keystroke would re-decode every visible PNG. Keyed by content hash, capped.
+    private static readonly ConcurrentDictionary<string, ImageSource> ThumbnailCache =
+        new(StringComparer.Ordinal);
+    private const int ThumbnailCacheCap = 200;
+    private const int ThumbnailWidth = 160;
+
     public Clip Clip { get; }
     public string Glyph { get; }
     public string Preview { get; }
     public string Meta { get; }
+
+    /// <summary>Decoded thumbnail for image clips; null for everything else (or corrupt PNGs).</summary>
+    public ImageSource? Thumbnail { get; }
+
+    public System.Windows.Visibility GlyphVisibility =>
+        Thumbnail is null ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility ThumbnailVisibility =>
+        Thumbnail is null ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
 
     /// <summary>Group key for the overlay list: pinned clips form their own section on top.</summary>
     public int PinnedGroup => Clip.Pinned ? 0 : 1;
@@ -33,6 +54,43 @@ public sealed class ClipItem
         };
         Preview = clip.PreviewText;
         Meta = $"{clip.SourceApp ?? "Unknown app"} · {Ago(clip.CreatedAt)}";
+        Thumbnail = clip.Type == ClipType.Image ? GetThumbnail(clip) : null;
+    }
+
+    private static ImageSource? GetThumbnail(Clip clip)
+    {
+        if (clip.ImageData is not { Length: > 0 }) return null;
+        if (ThumbnailCache.TryGetValue(clip.ContentHash, out var cached)) return cached;
+        var thumb = DecodeThumbnail(clip.ImageData);
+        if (thumb is null) return null;
+        if (ThumbnailCache.Count >= ThumbnailCacheCap) ThumbnailCache.Clear();
+        ThumbnailCache[clip.ContentHash] = thumb;
+        return thumb;
+    }
+
+    /// <summary>Decodes a PNG to a frozen thumbnail. Corrupt data degrades to the glyph.</summary>
+    private static BitmapImage? DecodeThumbnail(byte[] png)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            using var ms = new MemoryStream(png);
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad; // decode now; the stream can close
+            image.DecodePixelWidth = ThumbnailWidth;      // decode at thumbnail size, not full-res
+            image.StreamSource = ms;
+            image.EndInit();
+            image.Freeze(); // cross-thread safe (built on the UI thread today, frozen for safety)
+            return image;
+        }
+        // CA1031: a corrupt PNG must degrade to the glyph, never crash the overlay.
+        #pragma warning disable CA1031
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: thumbnail decode failed: {ex.Message}");
+            return null;
+        }
+        #pragma warning restore CA1031
     }
 
     private static string Ago(DateTimeOffset t)

@@ -52,7 +52,11 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontSize="20"
-                                       Margin="0,0,12,0" VerticalAlignment="Top"/>
+                                       Margin="0,0,12,0" VerticalAlignment="Top"
+                                       Visibility="{Binding GlyphVisibility}"/>
+                            <Image Grid.Column="0" Source="{Binding Thumbnail}" Width="56"
+                                   Stretch="Uniform" Margin="0,0,12,0" VerticalAlignment="Top"
+                                   Visibility="{Binding ThumbnailVisibility}"/>
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="{Binding Preview}" FontSize="14" Foreground="#EDEDF7"
                                            TextWrapping="Wrap" MaxHeight="62" TextTrimming="CharacterEllipsis"/>
