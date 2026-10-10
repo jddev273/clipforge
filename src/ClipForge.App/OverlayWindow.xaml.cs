@@ -15,17 +15,20 @@ namespace ClipForge.App;
 public partial class OverlayWindow : Window
 {
     private readonly IClipStore _store;
+    private readonly ISearchRanker _ranker;
     private readonly int _cacheSize;
     private List<Clip> _all = new();
 
     /// <summary>Raised when the user picks a clip. The handler pastes it.</summary>
     public event EventHandler<PasteEventArgs>? PasteRequested;
 
-    public OverlayWindow(IClipStore store, int cacheSize)
+    public OverlayWindow(IClipStore store, ISearchRanker ranker, int cacheSize)
     {
         ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(ranker);
         ArgumentOutOfRangeException.ThrowIfLessThan(cacheSize, 1);
         _store = store;
+        _ranker = ranker;
         _cacheSize = cacheSize;
         InitializeComponent();
     }
@@ -108,7 +111,7 @@ public partial class OverlayWindow : Window
 
     private void ApplyFilter(string query)
     {
-        var ranked = FuzzyMatcher.FilterAndRank(_all, query, 200);
+        var ranked = _ranker.FilterAndRank(_all, query, 200);
         clipsList.ItemsSource = ranked.Select(c => new ClipItem(c)).ToList();
         if (clipsList.Items.Count > 0)
             clipsList.SelectedIndex = 0;

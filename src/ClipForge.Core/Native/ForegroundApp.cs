@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace ClipForge.Core.Native;
 
 /// <summary>Resolves which app owned the foreground window at capture time (for source_app).</summary>
-internal static class ForegroundApp
+public static class ForegroundApp
 {
     public static string? GetProcessName()
     {

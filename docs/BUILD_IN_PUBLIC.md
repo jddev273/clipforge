@@ -34,3 +34,7 @@ miss a copy, never nag), opinionated defaults (no 100-setting options maze).
 No cloud accounts/sync service, no portable mode, no mobile app, no enterprise/team
 features, no options maze, no Ditto bloat tail (email export, QR view, odometer…),
 no AI chatbot. Sync is the v2 paid wedge — the v1 story is local-first.
+Note 2026-10-10 (Johann): LAN clipboard sharing is the interesting v2 shape —
+peer-to-peer, no server costs, no account. The Snipboard contrast writes itself:
+documented E2E encryption + the secret filter applied *before* anything leaves
+the machine, vs their undocumented encryption and indefinite retention.

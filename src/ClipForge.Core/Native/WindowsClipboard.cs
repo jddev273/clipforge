@@ -126,16 +126,22 @@ public static class WindowsClipboard
         return ok;
     }
 
-    /// <summary>Priority probe: files &gt; image &gt; html &gt; text.</summary>
-    public static ClipType? AvailableType()
-    {
-        if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_HDROP)) return ClipType.Files;
-        if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIBV5)
-            || NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIB)) return ClipType.Image;
-        if (HtmlFormatId != 0 && NativeMethods.IsClipboardFormatAvailable(HtmlFormatId)) return ClipType.Html;
-        if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_UNICODETEXT)) return ClipType.Text;
-        return null;
-    }
+    /// <summary>
+    /// Cheap per-format probes for the format handlers (no clipboard open).
+    /// Priority lives in the handlers (IClipFormatHandler.Priority), not here.
+    /// </summary>
+    public static bool IsFilesAvailable() =>
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_HDROP);
+
+    public static bool IsImageAvailable() =>
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIBV5)
+        || NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIB);
+
+    public static bool IsHtmlAvailable() =>
+        HtmlFormatId != 0 && NativeMethods.IsClipboardFormatAvailable(HtmlFormatId);
+
+    public static bool IsTextAvailable() =>
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_UNICODETEXT);
 
     // ---------------- write ----------------
 

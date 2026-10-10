@@ -1,20 +1,20 @@
-namespace ClipForge.Core;
+using ClipForge.Core;
+
+namespace ClipForge.Search;
 
 /// <summary>
-/// Ditto-style substring matcher for instant as-you-type filtering (core MVP interaction).
-/// Typing NARROWS the list: only clips containing the query as a contiguous,
-/// case-insensitive substring stay visible. Matches are ranked by quality —
-/// earlier position, word-boundary start and exact-case hits rank higher.
-/// (Was subsequence matching; scattered subsequence hits read as "not filtering".)
+/// Ditto-style substring matcher: the built-in <see cref="ISearchRanker"/>.
+/// Typing NARROWS the list — only clips containing the query as a contiguous,
+/// case-insensitive substring stay visible — ranked by match quality.
 /// </summary>
-public static class FuzzyMatcher
+public sealed class FuzzyMatcher : ISearchRanker
 {
     /// <summary>
     /// Scores a case-insensitive substring match. Returns null when
     /// <paramref name="query"/> is not a contiguous substring of
     /// <paramref name="target"/>. When several occurrences exist, the best one wins.
     /// </summary>
-    public static int? Score(string query, string target)
+    public int? Score(string query, string target)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(target);
@@ -42,7 +42,7 @@ public static class FuzzyMatcher
     /// Filters clips to those containing the query (preview or source app), ranked by
     /// match quality. Empty query returns input order (recency).
     /// </summary>
-    public static IReadOnlyList<Clip> FilterAndRank(IEnumerable<Clip> clips, string query, int limit = 100)
+    public IReadOnlyList<Clip> FilterAndRank(IEnumerable<Clip> clips, string query, int limit = 100)
     {
         ArgumentNullException.ThrowIfNull(clips);
         ArgumentNullException.ThrowIfNull(query);

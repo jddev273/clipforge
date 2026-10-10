@@ -1,3 +1,4 @@
+using ClipForge.Core;
 using Microsoft.Data.Sqlite;
 
 // CA2007, MA0004: every awaited Task in this file uses ConfigureAwait(false). The remaining
@@ -6,7 +7,7 @@ using Microsoft.Data.Sqlite;
 #pragma warning disable CA2007
 #pragma warning disable MA0004
 
-namespace ClipForge.Core;
+namespace ClipForge.Storage.Sqlite;
 
 /// <summary>SQLite-backed <see cref="IClipStore"/>. DB lives at %LOCALAPPDATA%/ClipForge/clips.db.</summary>
 public sealed class SqliteClipStore : IClipStore

@@ -14,8 +14,10 @@ namespace ClipForge.Core;
 
 /// <summary>
 /// Listens for clipboard changes via AddClipboardFormatListener on a hidden
-/// message-only window running on its own STA thread. Raises <see cref="ClipCaptured"/>
-/// with the new payload (text, image, files, or HTML fragment).
+/// message-only window running on its own STA thread. Format detection and capture
+/// are delegated to <see cref="IClipFormatHandler"/>s (tried in Priority order);
+/// the first handler that both claims and captures the clipboard wins.
+/// Raises <see cref="ClipCaptured"/> with the new payload.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class ClipboardListener : IDisposable
@@ -28,11 +30,14 @@ public sealed class ClipboardListener : IDisposable
     private IntPtr _origProc = IntPtr.Zero;
     private readonly WindowProc _wndProc;
     private readonly ManualResetEventSlim _ready = new(false);
+    private readonly IReadOnlyList<IClipFormatHandler> _handlers;
     private DateTime _suppressUntilUtc = DateTime.MinValue;
     private bool _disposed;
 
-    public ClipboardListener()
+    public ClipboardListener(IReadOnlyList<IClipFormatHandler> handlers)
     {
+        ArgumentNullException.ThrowIfNull(handlers);
+        _handlers = handlers;
         _wndProc = WndProc;
     }
 
@@ -134,34 +139,30 @@ public sealed class ClipboardListener : IDisposable
     /// Reads whatever is on the clipboard right now. Used at startup (so the
     /// pre-existing clipboard content becomes the first history entry) and by tests.
     /// </summary>
-    public static CapturedClip? CaptureCurrent()
+    public static CapturedClip? CaptureCurrent(IReadOnlyList<IClipFormatHandler> handlers)
     {
-        var type = WindowsClipboard.AvailableType();
-        return type is null ? null : TryCapture(type.Value);
+        ArgumentNullException.ThrowIfNull(handlers);
+        return TryCapture(handlers);
     }
 
     private void OnClipboardUpdate()
     {
         if (DateTime.UtcNow < _suppressUntilUtc) return;
 
-        var type = WindowsClipboard.AvailableType();
-        if (type is null) return;
-
-        var captured = TryCapture(type.Value);
+        var captured = TryCapture(_handlers);
         if (captured is null)
         {
             // Trust engineering: a transiently locked clipboard must not silently
             // eat a copy. One delayed retry before giving up on this update.
             Thread.Sleep(150);
-            captured = TryCapture(type.Value);
+            captured = TryCapture(_handlers);
         }
 
         if (captured is not null)
         {
-            // Trust-core invariants: what we detected is what we captured, and the
-            // payload is non-empty and consistent with its type. A violation means the
-            // clipboard changed mid-read or a capture bug — either way, don't persist it.
-            Debug.Assert(captured.Type == type.Value, "Captured type diverged from detected type.");
+            // Trust-core invariant: the payload is non-empty and consistent with its
+            // declared type. A violation means the clipboard changed mid-read or a
+            // capture bug — either way, don't persist it.
             Debug.Assert(HasPayload(captured), "Captured clip has an empty payload for its type.");
             ClipCaptured?.Invoke(this, new ClipCapturedEventArgs(captured));
         }
@@ -179,22 +180,19 @@ public sealed class ClipboardListener : IDisposable
         _ => false
     };
 
-    private static CapturedClip? TryCapture(ClipType type)
+    /// <summary>
+    /// Tries each format handler in Priority order. The first handler that claims the
+    /// clipboard (CanHandle) wins; a null Capture means transient failure, which the
+    /// caller retries once before giving up on this update.
+    /// </summary>
+    private static CapturedClip? TryCapture(IReadOnlyList<IClipFormatHandler> handlers)
     {
-        var app = ForegroundApp.GetProcessName();
-        var now = DateTimeOffset.UtcNow; // rule 7: never DateTimeOffset.Now as a time source
-        return type switch
+        foreach (var handler in handlers.OrderBy(static h => h.Priority))
         {
-            ClipType.Files when WindowsClipboard.TryGetFileList(out var paths) =>
-                new CapturedClip(ClipType.Files, null, null, paths, app, null, null, now),
-            ClipType.Image when WindowsClipboard.TryGetImage(out var png, out int w, out int h) =>
-                new CapturedClip(ClipType.Image, null, png, null, app, w, h, now),
-            ClipType.Html when WindowsClipboard.TryGetHtml(out var html) && !string.IsNullOrWhiteSpace(html) =>
-                new CapturedClip(ClipType.Html, html, null, null, app, null, null, now),
-            ClipType.Text when WindowsClipboard.TryGetText(out var text) && !string.IsNullOrEmpty(text) =>
-                new CapturedClip(ClipType.Text, text, null, null, app, null, null, now),
-            _ => null
-        };
+            if (!handler.CanHandle()) continue;
+            return handler.Capture();
+        }
+        return null;
     }
 
     public void Dispose()

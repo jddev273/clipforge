@@ -45,14 +45,39 @@ The solution also compiles on Linux/macOS (`EnableWindowsTargeting`) for CI — 
 
 ```
 src/
-  ClipForge.Core/          # no UI deps: model, SQLite store, fuzzy search,
-                           #   secret detector, Win32 clipboard listener (P/Invoke)
+  ClipForge.Core/          # contracts + model: IClipStore, ISecretDetector,
+                           #   ISearchRanker, IClipFormatHandler, PluginLoader,
+                           #   ClipboardListener (handler-driven), Win32 P/Invoke
+  ClipForge.Secrets/       # built-in ISecretDetector
+  ClipForge.Search/        # built-in ISearchRanker (substring ranker)
+  ClipForge.Storage.Sqlite/# built-in IClipStore (SQLite)
+  ClipForge.Formats/       # built-in IClipFormatHandlers (text/html/image/files)
   ClipForge.App/           # WPF: overlay, global hotkey, paste, tray icon
 docs/
   BUILD_IN_PUBLIC.md       # the build log — every iteration is a public beat
 ```
 
-The `ClipForge.Core` ↔ UI seam is deliberately clean (`IClipStore`, `ClipboardListener`, `FuzzyMatcher`) — search, pinning UI, snippets, semantic search and OCR all build on top of it.
+The `ClipForge.Core` ↔ UI seam is deliberately clean — search, pinning UI, snippets,
+semantic search and OCR all build on top of it.
+
+## Improving a piece
+
+Every major piece lives behind an interface in `ClipForge.Core` and ships in its
+own assembly — improve one piece without touching the rest:
+
+| Piece | Interface | Built-in assembly |
+|---|---|---|
+| Secret detection | `ISecretDetector` | `ClipForge.Secrets` |
+| Search ranking | `ISearchRanker` | `ClipForge.Search` |
+| Clip storage | `IClipStore` | `ClipForge.Storage.Sqlite` |
+| Clipboard formats | `IClipFormatHandler` (one per format) | `ClipForge.Formats` |
+
+To swap a piece: implement the interface with a parameterless constructor, build
+the DLL, drop it in the `plugins/` folder next to `ClipForge.exe`, restart.
+The first plugin implementation found wins for single-implementation seams
+(secrets, search, store); format handlers are additive, tried in `Priority`
+order. A bad DLL is skipped with a Debug note — it can never crash the app.
+No versioning, no sandboxing, no signing: this is a contributor seam, not a marketplace.
 
 ## Privacy
 

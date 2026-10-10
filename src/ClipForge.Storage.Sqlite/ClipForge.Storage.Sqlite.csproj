@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Shared strictness settings live in Directory.Build.props (bug-class-eliminator Phase 0). -->
+    <Description>ClipForge SQLite storage: the built-in IClipStore. Swappable via plugins/.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ClipForge.Core\ClipForge.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+  </ItemGroup>
+
+</Project>

@@ -1,23 +1,16 @@
 using System.Text.RegularExpressions;
 
-namespace ClipForge.Core;
+using ClipForge.Core;
+
+namespace ClipForge.Secrets;
 
 /// <summary>
 /// Privacy-by-default: detects secrets in copied text so they are NEVER stored.
 /// Deterministic pattern matching (no ML, no network). When in doubt it errs on the
 /// side of not storing — a missed history entry beats a leaked credential.
 /// </summary>
-public static class SecretDetector
+public sealed class SecretDetector : ISecretDetector
 {
-    public enum SecretKind
-    {
-        PrivateKey,
-        PasswordAssignment,
-        ApiKey,
-        CardNumber,
-        OtpCode
-    }
-
     // MA0009: every regex carries a 1s match timeout (DoS bound on hostile clipboard text).
     // MA0023: ExplicitCapture — no code reads capture groups (IsMatch/Matches/Value only).
     private static readonly Regex PasswordAssign =
@@ -45,7 +38,7 @@ public static class SecretDetector
             RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
 
     /// <summary>Returns the kind of secret found, or null when the text looks safe to store.</summary>
-    public static SecretKind? Detect(string? text)
+    public SecretKind? Detect(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         // Keep it cheap: most copies are short; cap the scan window.

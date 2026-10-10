@@ -20,6 +20,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClipForge.Core\ClipForge.Core.csproj" />
+    <ProjectReference Include="..\ClipForge.Secrets\ClipForge.Secrets.csproj" />
+    <ProjectReference Include="..\ClipForge.Search\ClipForge.Search.csproj" />
+    <ProjectReference Include="..\ClipForge.Storage.Sqlite\ClipForge.Storage.Sqlite.csproj" />
+    <ProjectReference Include="..\ClipForge.Formats\ClipForge.Formats.csproj" />
     <Resource Include="Resources\app.ico" />
   </ItemGroup>
 

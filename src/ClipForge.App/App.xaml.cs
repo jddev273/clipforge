@@ -3,6 +3,10 @@ using System.IO;
 using System.Windows;
 using ClipForge.Core;
 using ClipForge.Core.Native;
+using ClipForge.Formats;
+using ClipForge.Search;
+using ClipForge.Secrets;
+using ClipForge.Storage.Sqlite;
 
 // CA1724: 'App' is the WPF application-entry-point convention and x:Class-bound — renaming would fight the framework.
 // CA2007: WPF UI thread affinity — continuations below touch UI objects (OverlayWindow) and must keep the context.
@@ -25,9 +29,12 @@ public partial class App : System.Windows.Application, IDisposable
     private HotkeyService? _hotkeys;
     private TrayIcon? _tray;
     private OverlayWindow? _overlay;
-    // CA1859: IClipStore is a deliberate seam for test doubles and future store backends.
+    // CA1859: interface fields are deliberate seams — every major piece is swappable via plugins/.
 #pragma warning disable CA1859
     private IClipStore? _store;
+    private ISecretDetector _secrets = new SecretDetector();
+    private ISearchRanker _ranker = new FuzzyMatcher();
+    private IReadOnlyList<IClipFormatHandler> _formatHandlers = Array.Empty<IClipFormatHandler>();
 #pragma warning restore CA1859
     private string _lastSignature = string.Empty;
     private bool _disposed;
@@ -45,9 +52,19 @@ public partial class App : System.Windows.Application, IDisposable
             base.OnStartup(e);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+            // Plugin seams: every major piece is swappable — drop a DLL implementing
+            // the interface into plugins/ next to the exe (see README "Improving a piece").
+            _secrets = PluginLoader.Load<ISecretDetector>(new SecretDetector());
+            _ranker = PluginLoader.Load<ISearchRanker>(new FuzzyMatcher());
+            _formatHandlers = PluginLoader.LoadAll<IClipFormatHandler>(new IClipFormatHandler[]
+            {
+                new FilesFormatHandler(), new ImageFormatHandler(),
+                new HtmlFormatHandler(), new TextFormatHandler()
+            });
+
             _store = await InitializeStoreAsync().ConfigureAwait(true);
 
-            var overlay = new OverlayWindow(_store, OverlayCacheSize);
+            var overlay = new OverlayWindow(_store, _ranker, OverlayCacheSize);
             _overlay = overlay;
             overlay.PasteRequested += OnPasteRequested;
 
@@ -60,7 +77,7 @@ public partial class App : System.Windows.Application, IDisposable
             // Whatever was on the clipboard before launch becomes the first history entry.
             try
             {
-                var initial = ClipboardListener.CaptureCurrent();
+                var initial = ClipboardListener.CaptureCurrent(_formatHandlers);
                 if (initial is not null) OnClipCaptured(this, new ClipCapturedEventArgs(initial));
             }
             #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
@@ -86,7 +103,7 @@ public partial class App : System.Windows.Application, IDisposable
     private void StartInputServices(OverlayWindow overlay)
     {
         ArgumentNullException.ThrowIfNull(overlay);
-        _listener = new ClipboardListener();
+        _listener = new ClipboardListener(_formatHandlers);
         _listener.ClipCaptured += OnClipCaptured;
         try
         {
@@ -115,13 +132,13 @@ public partial class App : System.Windows.Application, IDisposable
 #pragma warning restore IDISP003
 
     /// <summary>Opens the store, enforces retention, and seeds duplicate suppression. (MA0051: extracted from OnStartup.)</summary>
-    private async Task<SqliteClipStore> InitializeStoreAsync()
+    private async Task<IClipStore> InitializeStoreAsync()
     {
         var dbPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ClipForge", "clips.db");
 
-        var store = new SqliteClipStore(dbPath);
+        var store = PluginLoader.Load<IClipStore>(new SqliteClipStore(dbPath));
         await store.InitializeAsync().ConfigureAwait(false);
         // Privacy-by-default: retention is NOT indefinite.
         await store.PruneByAgeAsync(Privacy.DefaultRetention).ConfigureAwait(false);
@@ -144,7 +161,7 @@ public partial class App : System.Windows.Application, IDisposable
             // Privacy-by-default: password managers and secrets are never stored.
             if (Privacy.IsSensitiveApp(captured.SourceApp)) return;
             if (captured.Type is ClipType.Text or ClipType.Html &&
-                SecretDetector.Detect(captured.Text) is not null) return;
+                _secrets.Detect(captured.Text) is not null) return;
 
             var clip = captured.ToClip();
             // MA0006: explicit ordinal comparison — hashes are ASCII, culture must not matter.
