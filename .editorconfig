@@ -1,0 +1,60 @@
+root = true
+
+# Bug-class-eliminator Phase 0 (2026-10-10): diagnostic severities.
+# Research: ~/workspace/bugclass-rules/research/synthesis.md
+# TreatWarningsAsErrors (Directory.Build.props) promotes every warning below to a build error.
+
+[*.cs]
+
+## Rule 2 — no async void (VSTHRD100 permits exactly the event-handler carve-out)
+dotnet_diagnostic.VSTHRD100.severity = error
+
+## Rule 6 — no fire-and-forget Tasks
+dotnet_diagnostic.VSTHRD110.severity = error
+dotnet_diagnostic.VSTHRD111.severity = error
+dotnet_diagnostic.MA0134.severity = error
+dotnet_code_quality.MA0134.report_discarded = true
+
+## Rule 9 — no sync-over-async (.Result / .Wait() on tasks)
+dotnet_diagnostic.VSTHRD002.severity = error
+
+## Rule 3 — dispose discipline, phrased as ownership (lane3 carve-outs apply:
+## dispose only what you created and did not transfer; DI/framework/test-lifecycle exempt)
+dotnet_diagnostic.CA2000.severity = error
+dotnet_diagnostic.CA1063.severity = error
+dotnet_diagnostic.IDISP001.severity = error
+dotnet_diagnostic.IDISP002.severity = error
+dotnet_diagnostic.IDISP003.severity = error
+dotnet_diagnostic.IDISP004.severity = error
+dotnet_diagnostic.IDISP005.severity = error
+dotnet_diagnostic.IDISP006.severity = error
+dotnet_diagnostic.IDISP007.severity = error
+dotnet_diagnostic.IDISP008.severity = error
+dotnet_diagnostic.IDISP009.severity = error
+dotnet_diagnostic.IDISP010.severity = error
+dotnet_diagnostic.IDISP011.severity = error
+dotnet_diagnostic.IDISP012.severity = error
+dotnet_diagnostic.IDISP013.severity = error
+dotnet_diagnostic.IDISP014.severity = error
+
+## Rule 8 — explicit StringComparison everywhere (CA1310: only flags
+## methods that default to culture-sensitive comparison; == / != exempt by design)
+dotnet_diagnostic.CA1310.severity = error
+dotnet_diagnostic.MA0001.severity = error
+dotnet_diagnostic.MA0002.severity = error
+
+## Rule 9b — catch(Exception) only at documented error boundaries, with log/rethrow
+## (lane3: absolute ban would kill legitimate boundaries; the boundary shape IS the rule)
+dotnet_diagnostic.CA1031.severity = error
+
+## Rule 11 — CancellationToken forwarded through async call chains
+dotnet_diagnostic.CA2016.severity = error
+
+## Rule 4 — exhaustive switch expressions (compiler-backed; statements use
+## explicit default-throws per the hardening commit)
+dotnet_diagnostic.CS8509.severity = error
+
+## Meziantou opt-in rules (disabled by default upstream; enabled here)
+dotnet_diagnostic.MA0037.severity = error
+dotnet_diagnostic.MA0039.severity = error
+dotnet_diagnostic.MA0049.severity = error

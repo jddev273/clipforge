@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using ClipForge.Core;
@@ -32,14 +33,29 @@ public partial class OverlayWindow : Window
     public void Toggle()
     {
         if (IsVisible) HideOverlay();
-        else ShowOverlay();
+        else StartShowOverlay();
     }
 
-    public async void ShowOverlay()
+    /// <summary>
+    /// Fire-and-forget with observation strategy (lane3 rule 6 carve-out): ShowOverlayAsync
+    /// is fully guarded internally, and any fault is logged via the continuation.
+    /// </summary>
+    private void StartShowOverlay()
+    {
+#pragma warning disable MA0134 // why: deliberate fire-and-forget with fault-logging continuation (lane3 rule 6 carve-out); the continuation IS the observation strategy.
+        _ = ShowOverlayAsync().ContinueWith(
+            static t => Debug.WriteLine($"ClipForge: ShowOverlay failed: {t.Exception?.Message}"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
+#pragma warning restore MA0134
+    }
+
+    public async Task ShowOverlayAsync()
     {
         try
         {
-            _all = (await _store.GetRecentAsync(_cacheSize)).ToList();
+            _all = (await _store.GetRecentAsync(_cacheSize).ConfigureAwait(true)).ToList();
         }
         // CA1031: startup best-effort — a fault here is diagnosed via Debug output, never allowed to take down the app.
 #pragma warning disable CA1031
@@ -65,18 +81,22 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>Called when a new clip is captured while the overlay is open.</summary>
-    public void NotifyClipAdded(Clip clip)
+    public async Task NotifyClipAddedAsync(Clip clip)
     {
         ArgumentNullException.ThrowIfNull(clip);
         if (!IsVisible) return;
-        Dispatcher.Invoke(() =>
+        // VSTHRD001: no JoinableTaskFactory in a plain WPF app (that API is VS-SDK-only).
+        // Awaited InvokeAsync never blocks a thread, so the rule's deadlock concern does not apply.
+#pragma warning disable VSTHRD001
+        await Dispatcher.InvokeAsync(() =>
         {
             // Keep pinned-first ordering consistent with GetRecentAsync.
             int idx = _all.FindIndex(c => !c.Pinned);
             if (idx < 0) _all.Add(clip);
             else _all.Insert(idx, clip);
             ApplyFilter(searchBox.Text);
-        });
+        }).Task.ConfigureAwait(true);
+#pragma warning restore VSTHRD001
     }
 
     private void Position()

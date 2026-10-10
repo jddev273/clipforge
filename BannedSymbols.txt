@@ -1,0 +1,5 @@
+# Rule 7: ban wall-clock-now APIs (format: symbol;diagnosticId;message)
+P:System.DateTime.Now;RS0030;Do not use System.DateTime.Now - use TimeProvider or DateTimeOffset.UtcNow instead.
+P:System.DateTime.Today;RS0030;Do not use System.DateTime.Today - use TimeProvider or DateTimeOffset.UtcNow instead.
+P:System.DateTimeOffset.Now;RS0030;Do not use System.DateTimeOffset.Now - use TimeProvider.GetUtcNow() instead.
+P:System.DateTimeOffset.LocalNow;RS0030;Do not use System.DateTimeOffset.LocalNow - use TimeProvider.GetUtcNow() instead.

@@ -204,7 +204,10 @@ public static class WindowsClipboard
         ArgumentNullException.ThrowIfNull(pngBytes);
         try
         {
-            using var src = new Bitmap(new MemoryStream(pngBytes));
+            // why separate using: Bitmap does NOT take ownership of the constructor stream —
+            // disposing src would leak ms. IDISP004 caught this.
+            using var ms = new MemoryStream(pngBytes);
+            using var src = new Bitmap(ms);
             using var bmp = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
                 g.DrawImage(src, 0, 0, src.Width, src.Height);

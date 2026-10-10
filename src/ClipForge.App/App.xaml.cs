@@ -32,16 +32,60 @@ public partial class App : System.Windows.Application, IDisposable
     private string _lastSignature = string.Empty;
     private bool _disposed;
 
+    // VSTHRD100: framework-mandated override signature — WPF requires async void for OnStartup.
+    // The body is fully guarded below, so no exception escapes unobserved (lane3 adjunct).
+#pragma warning disable VSTHRD100
     protected override async void OnStartup(StartupEventArgs e)
     {
-        base.OnStartup(e);
-        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        // IDISP003: these fields are assigned exactly once, here in OnStartup; all are disposed
+        // deterministically in Dispose(bool). The analyzer cannot prove single-assignment.
+#pragma warning disable IDISP003
+        try
+        {
+            base.OnStartup(e);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-        _store = await InitializeStoreAsync();
+            _store = await InitializeStoreAsync().ConfigureAwait(true);
 
-        _overlay = new OverlayWindow(_store, OverlayCacheSize);
-        _overlay.PasteRequested += OnPasteRequested;
+            var overlay = new OverlayWindow(_store, OverlayCacheSize);
+            _overlay = overlay;
+            overlay.PasteRequested += OnPasteRequested;
 
+            StartInputServices(overlay);
+
+            _tray = new TrayIcon(
+                showAction: () => _overlay.Toggle(),
+                exitAction: () => Shutdown());
+
+            // Whatever was on the clipboard before launch becomes the first history entry.
+            try
+            {
+                var initial = ClipboardListener.CaptureCurrent();
+                if (initial is not null) OnClipCaptured(this, new ClipCapturedEventArgs(initial));
+            }
+            #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ClipForge: initial capture failed: {ex.Message}");
+            }
+            #pragma warning restore CA1031
+        }
+        #pragma warning disable CA1031 // why: startup must never take down the process; any fault is diagnosed via Debug output.
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: startup failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
+#pragma warning restore IDISP003
+    }
+#pragma warning restore VSTHRD100
+
+    /// <summary>Starts the clipboard listener and global hotkey. (MA0051: extracted from OnStartup.)</summary>
+    // IDISP003: single-assignment here in startup; disposed deterministically in Dispose(bool).
+#pragma warning disable IDISP003
+    private void StartInputServices(OverlayWindow overlay)
+    {
+        ArgumentNullException.ThrowIfNull(overlay);
         _listener = new ClipboardListener();
         _listener.ClipCaptured += OnClipCaptured;
         try
@@ -57,8 +101,8 @@ public partial class App : System.Windows.Application, IDisposable
 
         try
         {
-            _hotkeys = new HotkeyService(_overlay);
-            _hotkeys.Pressed += (_, _) => _overlay.Toggle();
+            _hotkeys = new HotkeyService(overlay);
+            _hotkeys.Pressed += (_, _) => overlay.Toggle();
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)
@@ -67,24 +111,8 @@ public partial class App : System.Windows.Application, IDisposable
             Debug.WriteLine($"ClipForge: hotkey registration failed: {ex.Message}");
         }
         #pragma warning restore CA1031
-
-        _tray = new TrayIcon(
-            showAction: () => _overlay.Toggle(),
-            exitAction: () => Shutdown());
-
-        // Whatever was on the clipboard before launch becomes the first history entry.
-        try
-        {
-            var initial = ClipboardListener.CaptureCurrent();
-            if (initial is not null) OnClipCaptured(this, new ClipCapturedEventArgs(initial));
-        }
-        #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"ClipForge: initial capture failed: {ex.Message}");
-        }
-        #pragma warning restore CA1031
     }
+#pragma warning restore IDISP003
 
     /// <summary>Opens the store, enforces retention, and seeds duplicate suppression. (MA0051: extracted from OnStartup.)</summary>
     private async Task<SqliteClipStore> InitializeStoreAsync()
@@ -105,6 +133,9 @@ public partial class App : System.Windows.Application, IDisposable
         return store;
     }
 
+    // VSTHRD100: genuine event handler (EventHandler<ClipCapturedEventArgs> shape); the analyzer's
+    // carve-out misses the nullable 'object?' sender annotation. Body is fully guarded below.
+#pragma warning disable VSTHRD100
     private async void OnClipCaptured(object? sender, ClipCapturedEventArgs e)
     {
         var captured = e.Captured;
@@ -120,8 +151,8 @@ public partial class App : System.Windows.Application, IDisposable
             if (string.Equals(clip.ContentHash, _lastSignature, StringComparison.Ordinal)) return; // duplicate of last copy
             _lastSignature = clip.ContentHash;
             if (_store is null) return;
-            await _store.SaveAsync(clip);
-            _overlay?.NotifyClipAdded(clip);
+            await _store.SaveAsync(clip).ConfigureAwait(true);
+            if (_overlay is not null) await _overlay.NotifyClipAddedAsync(clip).ConfigureAwait(true);
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)
@@ -130,7 +161,11 @@ public partial class App : System.Windows.Application, IDisposable
         }
         #pragma warning restore CA1031
     }
+#pragma warning restore VSTHRD100
 
+    // VSTHRD100: genuine event handler (EventHandler<PasteEventArgs> shape); the analyzer's
+    // carve-out misses the nullable 'object?' sender annotation. Body is fully guarded below.
+#pragma warning disable VSTHRD100
     private async void OnPasteRequested(object? sender, PasteEventArgs e)
     {
         var clip = e.Clip;
@@ -139,7 +174,7 @@ public partial class App : System.Windows.Application, IDisposable
         {
             // Don't re-capture what we're about to paste.
             using var _ = _listener?.SuppressCapture(TimeSpan.FromSeconds(3));
-            await PasteService.PasteAsync(clip);
+            await PasteService.PasteAsync(clip).ConfigureAwait(true);
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)
@@ -148,6 +183,7 @@ public partial class App : System.Windows.Application, IDisposable
         }
         #pragma warning restore CA1031
     }
+#pragma warning restore VSTHRD100
 
     protected override void OnExit(ExitEventArgs e)
     {

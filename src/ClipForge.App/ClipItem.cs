@@ -30,7 +30,7 @@ public sealed class ClipItem
 
     private static string Ago(DateTimeOffset t)
     {
-        var d = DateTimeOffset.Now - t;
+        var d = DateTimeOffset.UtcNow - t; // rule 7: derive display time from UtcNow, never Now
         if (d < TimeSpan.FromMinutes(1)) return "just now";
         if (d < TimeSpan.FromHours(1)) return $"{(int)d.TotalMinutes}m ago";
         if (d < TimeSpan.FromDays(1)) return $"{(int)d.TotalHours}h ago";

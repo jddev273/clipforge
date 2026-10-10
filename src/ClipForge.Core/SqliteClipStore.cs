@@ -181,13 +181,13 @@ public sealed class SqliteClipStore : IClipStore
             {
                 Id = new ClipId(reader.GetInt64(0)),
                 Type = Enum.Parse<ClipType>(reader.GetString(1)),
-                Text = await reader.IsDBNullAsync(2, ct) ? null : reader.GetString(2),
-                ImageData = await reader.IsDBNullAsync(3, ct) ? null : (byte[])reader.GetValue(3),
+                Text = await reader.IsDBNullAsync(2, ct).ConfigureAwait(false) ? null : reader.GetString(2),
+                ImageData = await reader.IsDBNullAsync(3, ct).ConfigureAwait(false) ? null : (byte[])reader.GetValue(3),
                 PreviewText = reader.GetString(4),
-                SourceApp = await reader.IsDBNullAsync(5, ct) ? null : reader.GetString(5),
+                SourceApp = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5),
                 CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(6)),
                 Pinned = reader.GetInt64(7) != 0,
-                ContentHash = await reader.IsDBNullAsync(8, ct) ? string.Empty : reader.GetString(8)
+                ContentHash = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false) ? string.Empty : reader.GetString(8)
             });
         }
         return list;

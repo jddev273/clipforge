@@ -2,22 +2,11 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
-    <!-- Strictness hardening (2026-10-10): as close to SPARK Ada as C# gets. -->
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AnalysisMode>All</AnalysisMode>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <Version>0.1.0</Version>
+    <!-- Shared strictness settings live in Directory.Build.props (bug-class-eliminator Phase 0). -->
     <Description>ClipForge core: clipboard capture, clip model, SQLite store, fuzzy search. No UI dependencies.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.297">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
   </ItemGroup>

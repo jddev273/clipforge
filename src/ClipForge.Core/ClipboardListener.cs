@@ -82,7 +82,7 @@ public sealed class ClipboardListener : IDisposable
             // Only clear if nobody extended the window since.
             if (_owner._suppressUntilUtc <= _until + TimeSpan.FromMilliseconds(50))
                 _owner._suppressUntilUtc = DateTime.MinValue;
-            GC.SuppressFinalize(this);
+            // why no SuppressFinalize: sealed type, no finalizer — IDISP024.
         }
     }
 
@@ -182,7 +182,7 @@ public sealed class ClipboardListener : IDisposable
     private static CapturedClip? TryCapture(ClipType type)
     {
         var app = ForegroundApp.GetProcessName();
-        var now = DateTimeOffset.Now;
+        var now = DateTimeOffset.UtcNow; // rule 7: never DateTimeOffset.Now as a time source
         return type switch
         {
             ClipType.Files when WindowsClipboard.TryGetFileList(out var paths) =>
@@ -207,7 +207,8 @@ public sealed class ClipboardListener : IDisposable
             _thread.Join(TimeSpan.FromSeconds(5));
         }
         _ready.Dispose();
-        GC.SuppressFinalize(this);
+        // why no SuppressFinalize: sealed type, no finalizer (a finalizer would tear the
+        // message window down on the GC thread — actively harmful, see CA2216 note) — IDISP024.
     }
 }
 
