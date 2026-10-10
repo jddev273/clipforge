@@ -1,7 +1,7 @@
 <Window x:Class="ClipForge.App.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ClipForge" Width="680" Height="460"
+        Title="ClipForge" Width="680" Height="460" Icon="Resources/app.ico"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         PreviewKeyDown="Window_PreviewKeyDown" Deactivated="Window_Deactivated">
@@ -23,7 +23,7 @@
                          BorderThickness="0" CaretBrush="#F0F0FA"
                          SelectionBrush="#3D3D66"
                          TextChanged="SearchBox_TextChanged"/>
-                <TextBlock x:Name="watermark" Text="Search clips…  (fuzzy — type anything)"
+                <TextBlock x:Name="watermark" Text="Search clips…"
                            FontSize="17" Padding="12,10" Foreground="#6E6E8C"
                            IsHitTestVisible="False"/>
             </Grid>

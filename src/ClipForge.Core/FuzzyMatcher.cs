@@ -1,12 +1,19 @@
 namespace ClipForge.Core;
 
 /// <summary>
-/// Subsequence fuzzy matcher for instant as-you-type filtering (core MVP interaction).
-/// Scores reward: match at string start, match after a separator, consecutive runs,
-/// exact-case hits. Returns null when the query is not a subsequence of the target.
+/// Ditto-style substring matcher for instant as-you-type filtering (core MVP interaction).
+/// Typing NARROWS the list: only clips containing the query as a contiguous,
+/// case-insensitive substring stay visible. Matches are ranked by quality —
+/// earlier position, word-boundary start and exact-case hits rank higher.
+/// (Was subsequence matching; scattered subsequence hits read as "not filtering".)
 /// </summary>
 public static class FuzzyMatcher
 {
+    /// <summary>
+    /// Scores a case-insensitive substring match. Returns null when
+    /// <paramref name="query"/> is not a contiguous substring of
+    /// <paramref name="target"/>. When several occurrences exist, the best one wins.
+    /// </summary>
     public static int? Score(string query, string target)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -14,41 +21,27 @@ public static class FuzzyMatcher
         if (string.IsNullOrEmpty(query)) return 0;
         if (string.IsNullOrEmpty(target)) return null;
 
-        int score = 0;
-        int ti = 0;
-        int consecutive = 0;
-
-        foreach (char qc in query)
+        int? best = null;
+        int index = 0;
+        while (true)
         {
-            bool found = false;
-            while (ti < target.Length)
-            {
-                char tc = target[ti];
-                if (char.ToLowerInvariant(tc) == char.ToLowerInvariant(qc))
-                {
-                    found = true;
-                    int bonus = 1;
-                    if (ti == 0) bonus += 10;                                // start of string
-                    else if (IsSeparator(target[ti - 1])) bonus += 8;        // start of word
-                    if (consecutive > 0) bonus += 5 * Math.Min(consecutive, 4); // run bonus
-                    if (tc == qc) bonus += 1;                               // exact case
-                    score += bonus;
-                    consecutive++;
-                    ti++;
-                    break;
-                }
-                consecutive = 0;
-                ti++;
-            }
-            if (!found) return null;
+            int at = target.IndexOf(query, index, StringComparison.OrdinalIgnoreCase);
+            if (at < 0) break;
+            int s = 100 - Math.Min(at, 90); // earlier position wins
+            if (at == 0) s += 10;           // start of string
+            else if (IsSeparator(target[at - 1])) s += 8; // start of word
+            if (target.AsSpan(at, query.Length).SequenceEqual(query.AsSpan())) s += 5; // exact case
+            s -= target.Length / 32; // shorter targets preferred, lightly
+            if (!best.HasValue || s > best.Value) best = s;
+            index = at + 1;
         }
-
-        // Prefer shorter targets: penalize unmatched tail length lightly.
-        score -= (target.Length - query.Length) / 8;
-        return score;
+        return best;
     }
 
-    /// <summary>Filters and ranks clips by fuzzy score over preview + source app. Empty query returns input order.</summary>
+    /// <summary>
+    /// Filters clips to those containing the query (preview or source app), ranked by
+    /// match quality. Empty query returns input order (recency).
+    /// </summary>
     public static IReadOnlyList<Clip> FilterAndRank(IEnumerable<Clip> clips, string query, int limit = 100)
     {
         ArgumentNullException.ThrowIfNull(clips);
@@ -61,11 +54,14 @@ public static class FuzzyMatcher
         var scored = new List<(Clip clip, int score)>();
         foreach (var clip in clips)
         {
-            var target = string.IsNullOrEmpty(clip.SourceApp)
-                ? clip.PreviewText
-                : $"{clip.PreviewText} {clip.SourceApp}";
-            var s = Score(query, target);
-            if (s.HasValue) scored.Add((clip, s.Value));
+            int? best = Score(query, clip.PreviewText);
+            if (!string.IsNullOrEmpty(clip.SourceApp))
+            {
+                int? appScore = Score(query, clip.SourceApp);
+                if (appScore.HasValue && (!best.HasValue || appScore.Value > best.Value))
+                    best = appScore.Value;
+            }
+            if (best.HasValue) scored.Add((clip, best.Value));
         }
         return scored
             .OrderByDescending(x => x.score)

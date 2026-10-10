@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Windows;
 using ClipForge.Core.Native;
 using static ClipForge.Core.Native.NativeMethods;
 
@@ -51,10 +52,6 @@ public sealed class TrayIcon : IDisposable
     private static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATA lpData);
 
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr CreatePopupMenu();
 
@@ -88,6 +85,7 @@ public sealed class TrayIcon : IDisposable
     private readonly Action _exitAction;
     private readonly Hwnd _hwnd;
     private readonly uint _taskbarCreatedMsg;
+    private readonly System.Drawing.Icon _icon; // kept alive while the tray icon is registered
     private bool _disposed;
 
     public TrayIcon(Action showAction, Action exitAction)
@@ -98,6 +96,7 @@ public sealed class TrayIcon : IDisposable
         _exitAction = exitAction;
         _wndProc = WndProc;
         _taskbarCreatedMsg = RegisterWindowMessageW("TaskbarCreated");
+        _icon = LoadAppIcon();
 
         // Message-only window on the UI thread; the WPF dispatcher pumps messages.
         _hwnd = Hwnd.FromIntPtr(CreateWindowExW(0, "STATIC", "ClipForgeTray", 0, 0, 0, 0, 0,
@@ -105,6 +104,20 @@ public sealed class TrayIcon : IDisposable
         SetWindowLongPtr(_hwnd.ToIntPtr(), GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProc));
 
         AddIcon();
+    }
+
+    /// <summary>
+    /// Loads the branded icon from the embedded WPF resource. A missing resource is a
+    /// packaging bug — fail fast rather than silently showing the default Windows icon.
+    /// </summary>
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        var resource = Application.GetResourceStream(
+            new Uri("pack://application:,,,/Resources/app.ico", UriKind.Absolute));
+        if (resource?.Stream is null)
+            throw new InvalidOperationException("ClipForge: embedded resource 'Resources/app.ico' is missing.");
+        // Icon(Stream) reads the stream eagerly; the framework owns the resource stream lifetime.
+        return new System.Drawing.Icon(resource.Stream);
     }
 
     private void AddIcon()
@@ -116,7 +129,7 @@ public sealed class TrayIcon : IDisposable
             uID = 1,
             uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage = WM_TRAY,
-            hIcon = LoadIconW(IntPtr.Zero, (IntPtr)32512), // IDI_APPLICATION; branded icon is a polish item
+            hIcon = _icon.Handle, // branded icon; the Icon stays alive for the tray lifetime
             szTip = "ClipForge — Ctrl+Shift+V"
         };
         Shell_NotifyIconW(NIM_ADD, ref data);
@@ -168,6 +181,7 @@ public sealed class TrayIcon : IDisposable
         };
         Shell_NotifyIconW(NIM_DELETE, ref data);
         DestroyWindow(_hwnd.ToIntPtr());
+        _icon.Dispose();
     }
 }
 

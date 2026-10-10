@@ -11,6 +11,8 @@
     <AssemblyName>ClipForge</AssemblyName>
     <Description>ClipForge — the clipboard manager rebuilt for 2026. Free, fast, beautiful.</Description>
     <PublishDir>publish\</PublishDir>
+    <!-- Branded icon: exe icon + WPF resource (tray + overlay window). -->
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <!-- Publish defaults: framework-dependent + ReadyToRun via the Fast publish profile
          (Properties/PublishProfiles/Fast.pubxml). The box has the .NET 8 desktop runtime,
          so self-contained single-file is pure dead weight (was 163MB, ~2min cold start). -->
@@ -18,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClipForge.Core\ClipForge.Core.csproj" />
+    <Resource Include="Resources\app.ico" />
   </ItemGroup>
 
 </Project>

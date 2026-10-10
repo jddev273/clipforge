@@ -15,7 +15,7 @@ seen running yet. Nothing is marked working until it works.
 - [x] ✅ **Privacy-by-default in the capture path:** secret auto-detection (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments) is never stored; password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
 - [x] ✅ Trust engineering: delayed retry on locked clipboard (never silently miss a copy), duplicate suppression, self-paste suppression, explorer-restart tray recovery, zero nag dialogs
 - [x] Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean) — implemented, not yet seen running
-- [x] Instant fuzzy search as you type (subsequence matcher with word-boundary/consecutive bonuses) — implemented, not yet seen running
+- [x] Instant search as you type — Ditto-style substring filter, ranked by match quality (position, word-boundary, exact case) — implemented, not yet seen running
 - [x] `Enter` pastes the selected clip, `Esc`/click-away dismisses — implemented, not yet seen running
 
 **Not yet (iteration order):** search highlighting → pinning + multi-paste → paste-as-plain-text + case transforms → snippets with variables → privacy demo beat → semantic search → OCR on images → installer/polish. See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
