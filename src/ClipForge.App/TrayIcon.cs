@@ -82,17 +82,20 @@ public sealed class TrayIcon : IDisposable
 
     private readonly WindowProc _wndProc;
     private readonly Action _showAction;
+    private readonly Action _settingsAction;
     private readonly Action _exitAction;
     private readonly Hwnd _hwnd;
     private readonly uint _taskbarCreatedMsg;
     private readonly System.Drawing.Icon _icon; // kept alive while the tray icon is registered
     private bool _disposed;
 
-    public TrayIcon(Action showAction, Action exitAction)
+    public TrayIcon(Action showAction, Action settingsAction, Action exitAction)
     {
         ArgumentNullException.ThrowIfNull(showAction);
+        ArgumentNullException.ThrowIfNull(settingsAction);
         ArgumentNullException.ThrowIfNull(exitAction);
         _showAction = showAction;
+        _settingsAction = settingsAction;
         _exitAction = exitAction;
         _wndProc = WndProc;
         _taskbarCreatedMsg = RegisterWindowMessageW("TaskbarCreated");
@@ -159,12 +162,14 @@ public sealed class TrayIcon : IDisposable
         try
         {
             AppendMenuW(menu, 0, (UIntPtr)1, "Show ClipForge");
-            AppendMenuW(menu, 0, (UIntPtr)2, "E&xit");
+            AppendMenuW(menu, 0, (UIntPtr)2, "Settings");
+            AppendMenuW(menu, 0, (UIntPtr)3, "E&xit");
             GetCursorPos(out var pt);
             SetForegroundWindow(_hwnd.ToIntPtr()); // required so the menu dismisses correctly
             uint cmd = TrackPopupMenu(menu, 0x0100 | 0x0002, pt.X, pt.Y, 0, _hwnd.ToIntPtr(), IntPtr.Zero);
             if (cmd == 1) _showAction();
-            else if (cmd == 2) _exitAction();
+            else if (cmd == 2) _settingsAction();
+            else if (cmd == 3) _exitAction();
         }
         finally { DestroyMenu(menu); }
     }

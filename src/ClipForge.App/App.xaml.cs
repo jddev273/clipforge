@@ -35,6 +35,7 @@ public partial class App : System.Windows.Application, IDisposable
     private ISecretDetector _secrets = new SecretDetector();
     private ISearchRanker _ranker = new FuzzyMatcher();
     private IReadOnlyList<IClipFormatHandler> _formatHandlers = Array.Empty<IClipFormatHandler>();
+    private AppSettings _settings = new();
 #pragma warning restore CA1859
     private string _lastSignature = string.Empty;
     private bool _disposed;
@@ -61,6 +62,7 @@ public partial class App : System.Windows.Application, IDisposable
                 new FilesFormatHandler(), new ImageFormatHandler(), new RtfFormatHandler(),
                 new HtmlFormatHandler(), new TextFormatHandler()
             });
+            _settings = AppSettings.Load();
 
             _store = await InitializeStoreAsync().ConfigureAwait(true);
 
@@ -72,7 +74,11 @@ public partial class App : System.Windows.Application, IDisposable
 
             _tray = new TrayIcon(
                 showAction: () => _overlay.Toggle(),
+                settingsAction: OpenSettings,
                 exitAction: () => Shutdown());
+
+            // Autostart: on by default from the first run; the settings toggle owns it afterwards.
+            EnsureAutostart(_settings);
 
             // Whatever was on the clipboard before launch becomes the first history entry.
             try
@@ -118,8 +124,7 @@ public partial class App : System.Windows.Application, IDisposable
 
         try
         {
-            _hotkeys = new HotkeyService(overlay);
-            _hotkeys.Pressed += (_, _) => overlay.Toggle();
+            _hotkeys = StartHotkey(overlay, _settings.Hotkey);
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)
@@ -131,6 +136,77 @@ public partial class App : System.Windows.Application, IDisposable
     }
 #pragma warning restore IDISP003
 
+    /// <summary>Creates and wires the global hotkey. Throws when the chord is invalid or taken.</summary>
+    private static HotkeyService StartHotkey(OverlayWindow overlay, string chordText)
+    {
+        ArgumentNullException.ThrowIfNull(overlay);
+        if (!HotkeyChord.TryParse(chordText, out var chord) || chord is null)
+            throw new InvalidOperationException($"Invalid hotkey chord in settings: {chordText}");
+        var service = new HotkeyService(overlay, chord);
+        service.Pressed += (_, _) => overlay.Toggle();
+        return service;
+    }
+
+    /// <summary>Best-effort first-run autostart enablement. Registry failures never affect startup.</summary>
+    private static void EnsureAutostart(AppSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        try
+        {
+            if (settings.Autostart && !AutostartManager.IsEnabled())
+                AutostartManager.SetEnabled(true);
+        }
+        #pragma warning disable CA1031 // why: autostart is best-effort; a registry failure must not affect startup.
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: autostart setup failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
+    }
+
+    private void OpenSettings()
+    {
+        var window = new SettingsWindow(_settings) { Owner = _overlay };
+        if (window.ShowDialog() == true && window.Result is not null)
+            ApplySettings(window.Result);
+    }
+
+    private void ApplySettings(AppSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings;
+        settings.Save();
+
+        // Rebind the hotkey: build the new service before disposing the old one, so a
+        // taken chord keeps the previous hotkey instead of leaving none registered.
+        if (_overlay is not null)
+        {
+            try
+            {
+                var next = StartHotkey(_overlay, settings.Hotkey);
+                _hotkeys?.Dispose();
+                _hotkeys = next;
+            }
+            #pragma warning disable CA1031 // why: a taken/invalid chord keeps the previous hotkey; Debug-logged.
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ClipForge: hotkey rebind failed, keeping previous: {ex.Message}");
+            }
+            #pragma warning restore CA1031
+        }
+
+        try
+        {
+            AutostartManager.SetEnabled(settings.Autostart);
+        }
+        #pragma warning disable CA1031 // why: best-effort; the checkbox reflects intent even if the registry write failed.
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: autostart toggle failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
+    }
+
     /// <summary>Opens the store, enforces retention, and seeds duplicate suppression. (MA0051: extracted from OnStartup.)</summary>
     private async Task<IClipStore> InitializeStoreAsync()
     {
@@ -140,9 +216,9 @@ public partial class App : System.Windows.Application, IDisposable
 
         var store = PluginLoader.Load<IClipStore>(new SqliteClipStore(dbPath));
         await store.InitializeAsync().ConfigureAwait(false);
-        // Privacy-by-default: retention is NOT indefinite.
-        await store.PruneByAgeAsync(Privacy.DefaultRetention).ConfigureAwait(false);
-        await store.PruneAsync(Privacy.MaxUnpinnedClips).ConfigureAwait(false);
+        // Privacy-by-default: retention is NOT indefinite (user-configurable, 90 days default).
+        await store.PruneByAgeAsync(TimeSpan.FromDays(_settings.RetentionDays)).ConfigureAwait(false);
+        await store.PruneAsync(_settings.MaxUnpinnedClips).ConfigureAwait(false);
 
         // Seed duplicate suppression with the newest stored clip.
         var recent = await store.GetRecentAsync(1).ConfigureAwait(false);
@@ -158,8 +234,8 @@ public partial class App : System.Windows.Application, IDisposable
         var captured = e.Captured;
         try
         {
-            // Privacy-by-default: password managers and secrets are never stored.
-            if (Privacy.IsSensitiveApp(captured.SourceApp)) return;
+            // Privacy-by-default: password managers, user-excluded apps and secrets are never stored.
+            if (Privacy.IsSensitiveApp(captured.SourceApp) || _settings.IsExcludedApp(captured.SourceApp)) return;
             if (captured.Type is ClipType.Text or ClipType.Html or ClipType.Rtf &&
                 _secrets.Detect(captured.Text) is not null) return;
 

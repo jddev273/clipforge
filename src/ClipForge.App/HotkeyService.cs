@@ -6,12 +6,10 @@ using static ClipForge.Core.Native.NativeMethods;
 
 namespace ClipForge.App;
 
-/// <summary>Global hotkey (Ctrl+Shift+V) that summons the overlay from anywhere.</summary>
+/// <summary>Global hotkey that summons the overlay from anywhere. The chord is rebindable via settings.</summary>
 public sealed class HotkeyService : IDisposable
 {
     private const int HotkeyId = 0xC10F; // arbitrary, unlikely to collide
-    private const uint Modifiers = 0x0002 | 0x0004; // MOD_CONTROL | MOD_SHIFT
-    private const uint VkV = 0x56;
 
     private readonly HwndSource _source;
     private readonly Hwnd _hwnd;
@@ -19,19 +17,21 @@ public sealed class HotkeyService : IDisposable
 
     public event EventHandler? Pressed;
 
-    public HotkeyService(Window window)
+    public HotkeyService(Window window, HotkeyChord chord)
     {
         ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(chord);
         var helper = new WindowInteropHelper(window);
         helper.EnsureHandle();
         _hwnd = Hwnd.FromIntPtr(helper.Handle);
         _source = HwndSource.FromHwnd(_hwnd.ToIntPtr()) ?? throw new InvalidOperationException("No HWND source.");
         _source.AddHook(WndProc);
-        if (!RegisterHotKey(_hwnd.ToIntPtr(), HotkeyId, Modifiers, VkV))
+        var (modifiers, vk) = chord.ToWin32();
+        if (!RegisterHotKey(_hwnd.ToIntPtr(), HotkeyId, modifiers, vk))
         {
             int err = Marshal.GetLastWin32Error();
             throw new InvalidOperationException(
-                $"RegisterHotKey failed (error {err}). Another app may own Ctrl+Shift+V.");
+                $"RegisterHotKey failed for {chord} (error {err}). Another app may own it.");
         }
     }
 
