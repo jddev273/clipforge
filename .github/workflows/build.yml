@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
@@ -15,14 +15,17 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # Strictness pack (Directory.Build.props) runs here: nullable, TWAE,
+      # AnalysisMode All, Meziantou, VSTHRD, IDISP, BannedApi, STRICT0001.
+      # Warnings are errors — a red build means the rules caught something.
       - name: Build
         run: dotnet build ClipForge.sln -c Release --nologo
 
-      - name: Publish single-file
-        run: dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release -r win-x64 --self-contained -o dist --nologo
+      - name: Publish (Fast profile)
+        run: dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release /p:PublishProfile=Fast --nologo
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: clipforge-win-x64
-          path: dist/ClipForge.exe
+          path: src/ClipForge.App/bin/Release/publish/
