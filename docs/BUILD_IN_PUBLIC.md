@@ -5,9 +5,9 @@ Every row below shipped as working software with a shareable demo beat — no va
 
 ## The mission
 
-Ditto won every clipboard-manager shootout but looks like 2008. We're rebuilding it
+Ditto has owned this space for years but looks like 2008. We're rebuilding it
 for 2026: **free, fast, beautiful, privacy-by-default** — Ditto's engine, Snipboard's
-looks, and a 2026 intelligence layer (semantic search, OCR) nobody on Windows ships.
+looks, and a 2026 intelligence layer (semantic search, OCR) we haven't seen on Windows.
 
 Principles: local-first (SQLite you own, zero telemetry), trust engineering (never
 miss a copy, never nag), opinionated defaults (no 100-setting options maze).
@@ -16,7 +16,7 @@ miss a copy, never nag), opinionated defaults (no 100-setting options maze).
 
 | Date | Version | What shipped | Demo beat |
 |---|---|---|---|
-| 2026-10-10 | v0.1.0 | MVP: capture (text/HTML/images/files) → SQLite → `Ctrl+Shift+V` command-palette overlay → instant fuzzy search → `Enter` pastes. Privacy-by-default in the capture path: secret auto-detection (API keys, card numbers, OTPs, private keys) never stored, password-manager apps excluded, 90-day retention. Trust: locked-clipboard retry, duplicate + self-paste suppression, tray recovery. | "The 20-second clip": copy 5 things → hotkey → gorgeous panel → paste. |
+| 2026-10-10 | v0.1.0 | MVP: capture (text/HTML/images/files) → SQLite → `Ctrl+Shift+V` command-palette overlay → instant fuzzy search → `Enter` pastes. Privacy-by-default in the capture path: secret auto-detection refuses common patterns at capture (best-effort), password-manager apps excluded, 90-day retention. Trust: locked-clipboard retry, duplicate + self-paste suppression, tray recovery. | "The 20-second clip": copy 5 things → hotkey → gorgeous panel → paste. |
 
 ## Up next (iteration order)
 
@@ -35,6 +35,9 @@ No cloud accounts/sync service, no portable mode, no mobile app, no enterprise/t
 features, no options maze, no Ditto bloat tail (email export, QR view, odometer…),
 no AI chatbot. Sync is the v2 paid wedge — the v1 story is local-first.
 Note 2026-10-10 (Johann): LAN clipboard sharing is the interesting v2 shape —
-peer-to-peer, no server costs, no account. The Snipboard contrast writes itself:
+peer-to-peer, no server costs, no account. Where we'd differ from Snipboard:
 documented E2E encryption + the secret filter applied *before* anything leaves
-the machine, vs their undocumented encryption and indefinite retention.
+the machine, vs their undocumented LAN encryption (no public docs on encryption,
+pairing, or discovery as of Oct 2026 — WindowsForum) and indefinite-retention
+*default* (XDA hands-on: beta defaults to indefinite retention under a 1GB cap,
+user-changeable).

@@ -1,6 +1,6 @@
 # ClipForge
 
-**Ditto won every clipboard-manager shootout but looks like 2008. ClipForge is the rebuild for 2026 — free, fast, beautiful, built in public by AI agents.**
+**Ditto has owned this space for years but looks like 2008. ClipForge is the rebuild for 2026 — free, fast, beautiful, built in public by AI agents.**
 
 ClipForge is a native Windows clipboard manager: everything you copy (text, images, files) lands in a local SQLite history; `Ctrl+Shift+V` summons a command-palette overlay; fuzzy search finds anything instantly; `Enter` pastes it. No account, no cloud, no telemetry — your clips never leave your machine.
 
@@ -11,7 +11,7 @@ working until it works.
 
 - [x] ✅ Clipboard capture — text, HTML, RTF, images (PNG), file lists — via `AddClipboardFormatListener`
 - [x] ✅ Local SQLite history (`%LOCALAPPDATA%/ClipForge/clips.db`), survives reboot
-- [x] ✅ **Privacy-by-default in the capture path:** secret auto-detection (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments) is never stored; password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
+- [x] ✅ **Privacy-by-default in the capture path:** secret auto-detection refuses common secret patterns at the capture boundary (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments — best-effort: first 8KB of text scanned, not a guarantee); password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
 - [x] ✅ Trust engineering: delayed retry on locked clipboard (never silently miss a copy), duplicate suppression, self-paste suppression, explorer-restart tray recovery, zero nag dialogs
 - [x] ✅ Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean)
 - [x] ✅ Instant search as you type — Ditto-style substring filter, ranked by match quality (position, word-boundary, exact case)
@@ -89,7 +89,7 @@ No versioning, no sandboxing, no signing: this is a contributor seam, not a mark
 
 ## Privacy
 
-Local-first, always: one SQLite file you own, no network calls, no telemetry, no account. Secrets are refused at the capture boundary — see `SecretDetector.cs`.
+Local-first, always: one SQLite file you own, no network calls, no telemetry, no account. Common secret patterns are refused at the capture boundary (best-effort filter, not a guarantee — see `SecretDetector.cs`).
 
 ## License
 

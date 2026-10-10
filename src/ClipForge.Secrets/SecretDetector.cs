@@ -5,9 +5,10 @@ using ClipForge.Core;
 namespace ClipForge.Secrets;
 
 /// <summary>
-/// Privacy-by-default: detects secrets in copied text so they are NEVER stored.
-/// Deterministic pattern matching (no ML, no network). When in doubt it errs on the
-/// side of not storing — a missed history entry beats a leaked credential.
+/// Privacy-by-default: best-effort detection of common secret patterns in copied text
+/// (first 8KB scanned). Deterministic pattern matching (no ML, no network). When in
+/// doubt it errs on the side of not storing — a missed history entry beats a leaked
+/// credential. This is a filter, not a guarantee.
 /// </summary>
 public sealed class SecretDetector : ISecretDetector
 {

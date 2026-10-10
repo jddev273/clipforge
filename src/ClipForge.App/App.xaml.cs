@@ -234,10 +234,11 @@ public partial class App : System.Windows.Application, IDisposable
         var captured = e.Captured;
         try
         {
-            // Privacy-by-default: password managers, user-excluded apps and secrets are never stored.
+            // Privacy-by-default: password managers, user-excluded apps and detected
+            // secrets are refused at the capture boundary (best-effort filter, not a guarantee).
             if (Privacy.IsSensitiveApp(captured.SourceApp) || _settings.IsExcludedApp(captured.SourceApp)) return;
             if (captured.Type is ClipType.Text or ClipType.Html or ClipType.Rtf &&
-                _secrets.Detect(captured.Text) is not null) return;
+                _secrets.Detect(captured.SecretScanText) is not null) return;
 
             var clip = captured.ToClip();
             // MA0006: explicit ordinal comparison — hashes are ASCII, culture must not matter.

@@ -1,8 +1,8 @@
 namespace ClipForge.Core;
 
 /// <summary>
-/// Privacy seam: detects secrets in copied text so they are NEVER stored.
-/// Implement this interface and drop the DLL in plugins/ to replace the detector.
+/// Privacy seam: best-effort detection of secrets in copied text so matches are refused
+/// at the capture boundary. Implement this interface and drop the DLL in plugins/ to replace the detector.
 /// </summary>
 public interface ISecretDetector
 {

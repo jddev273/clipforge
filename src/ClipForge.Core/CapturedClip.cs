@@ -57,6 +57,14 @@ public sealed record CapturedClip(
         _ => UnknownClipType<string>()
     };
 
+    /// <summary>
+    /// Text the secret filter scans: the plain-text companion, or the RTF markup's
+    /// text runs when the source exposed no CF_UNICODETEXT companion (otherwise
+    /// secrets hiding in RTF-only copies would bypass the filter).
+    /// </summary>
+    public string? SecretScanText =>
+        Type is ClipType.Rtf && string.IsNullOrEmpty(Text) ? StripRtf(RtfText) : Text;
+
     public string ContentHash
     {
         get
