@@ -117,6 +117,12 @@ public static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool EmptyClipboard();
 
+    // Bumps every time clipboard content changes. Lets paste-restore verify that the
+    // clipboard still holds what we staged before putting the previous content back.
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", ExactSpelling = true)]
+    public static extern uint GetClipboardSequenceNumber();
+
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr GetClipboardData(uint uFormat);

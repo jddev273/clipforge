@@ -11,7 +11,8 @@ namespace ClipForge.App;
 /// <summary>
 /// Pastes a clip into the previously focused app: hides the overlay (returning focus),
 /// stages the clip on the clipboard, sends Ctrl+V, then best-effort restores the
-/// clipboard content the user had before.
+/// richest clipboard format the user had before. Restore is skipped when the user
+/// copied something new mid-paste (their copy always wins).
 /// </summary>
 public static class PasteService
 {
@@ -60,19 +61,92 @@ public static class PasteService
     {
         ArgumentNullException.ThrowIfNull(stage);
 
-        // Snapshot current clipboard text so we can put it back afterward (best effort).
-        WindowsClipboard.TryGetText(out string? previousText);
+        // Snapshot the richest clipboard format so we can put it back afterward.
+        var previous = ClipboardSnapshot.Capture();
 
         await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
 
         if (!stage()) return;
+        // Sequence number AFTER staging identifies the clipboard state we created.
+        uint stagedSequence = NativeMethods.GetClipboardSequenceNumber();
 
         SendCtrlV();
         await Task.Delay(500).ConfigureAwait(false);
 
-        // Restore what was there before, so the paste doesn't clobber the user's clipboard.
-        if (previousText is not null)
-            WindowsClipboard.TrySetText(previousText);
+        // If the user copied something new while we were pasting, their copy wins:
+        // never restore over it.
+        if (NativeMethods.GetClipboardSequenceNumber() != stagedSequence) return;
+
+        previous.Restore();
+    }
+
+    /// <summary>
+    /// Best-effort snapshot of the richest clipboard format, so paste can put back what
+    /// was there before. The app models a copy as one <see cref="ClipType"/>; restore
+    /// mirrors that rather than rebuilding a multi-format clipboard (no HTML-format
+    /// writer exists, so an HTML copy's text companion preserves its content).
+    /// </summary>
+    private sealed class ClipboardSnapshot
+    {
+        private readonly ClipType _type;
+        private readonly string? _text;
+        private readonly string? _rtf;
+        private readonly byte[]? _image;
+        private readonly string[] _files;
+
+        private ClipboardSnapshot(ClipType type, string? text, string? rtf, byte[]? image, string[] files)
+        {
+            _type = type;
+            _text = text;
+            _rtf = rtf;
+            _image = image;
+            _files = files;
+        }
+
+        public static ClipboardSnapshot Capture()
+        {
+            // Richest first — mirrors the format-handler priority order.
+            if (WindowsClipboard.TryGetFileList(out string[] files) && files.Length > 0)
+                return new ClipboardSnapshot(ClipType.Files, null, null, null, files);
+            if (WindowsClipboard.TryGetImage(out byte[]? png, out _, out _) && png is not null)
+                return new ClipboardSnapshot(ClipType.Image, null, null, png, Array.Empty<string>());
+            if (WindowsClipboard.TryGetRtf(out string? rtf) && !string.IsNullOrEmpty(rtf))
+                return new ClipboardSnapshot(ClipType.Rtf, null, rtf, null, Array.Empty<string>());
+            if (WindowsClipboard.TryGetText(out string? text) && !string.IsNullOrEmpty(text))
+                return new ClipboardSnapshot(ClipType.Text, text, null, null, Array.Empty<string>());
+            return new ClipboardSnapshot(ClipType.Text, null, null, null, Array.Empty<string>());
+        }
+
+        public void Restore()
+        {
+            // Restore runs after a successful paste and must never throw or clobber:
+            // the sequence-number guard in PasteCoreAsync already verified the clipboard
+            // still holds what we staged. Every setter below is itself best-effort.
+            try
+            {
+                switch (_type)
+                {
+                    case ClipType.Files when _files.Length > 0:
+                        WindowsClipboard.TrySetFileList(_files);
+                        break;
+                    case ClipType.Image when _image is not null:
+                        WindowsClipboard.TrySetImage(_image);
+                        break;
+                    case ClipType.Rtf when !string.IsNullOrEmpty(_rtf):
+                        WindowsClipboard.TrySetRtf(_rtf);
+                        break;
+                    case ClipType.Text when !string.IsNullOrEmpty(_text):
+                        WindowsClipboard.TrySetText(_text);
+                        break;
+                }
+            }
+#pragma warning disable CA1031 // why: restore is best-effort by design — a fault here must degrade to "not restored", never propagate.
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ClipForge: clipboard restore failed: {ex.Message}");
+            }
+#pragma warning restore CA1031
+        }
     }
 
     private static void SendCtrlV()
