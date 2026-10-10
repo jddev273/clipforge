@@ -4,21 +4,29 @@
 
 ClipForge is a native Windows clipboard manager: everything you copy (text, images, files) lands in a local SQLite history; `Ctrl+Shift+V` summons a command-palette overlay; fuzzy search finds anything instantly; `Enter` pastes it. No account, no cloud, no telemetry — your clips never leave your machine.
 
-## Status: v0.1.0 MVP (2026-10-10)
+## Status: v0.1.0 (2026-10-10)
 
-Verified on real Windows 10/11 2026-10-10 are marked ✅ — the rest compiles
-clean (0 warnings, strict analyzer pack) and is implemented, but hasn't been
-seen running yet. Nothing is marked working until it works.
+Marked ✅ = seen running on real Windows 10/11 on 2026-10-10. Nothing is marked
+working until it works.
 
-- [x] ✅ Clipboard capture — text, HTML, images (PNG), file lists — via `AddClipboardFormatListener`
+- [x] ✅ Clipboard capture — text, HTML, RTF, images (PNG), file lists — via `AddClipboardFormatListener`
 - [x] ✅ Local SQLite history (`%LOCALAPPDATA%/ClipForge/clips.db`), survives reboot
 - [x] ✅ **Privacy-by-default in the capture path:** secret auto-detection (API keys, Luhn-validated card numbers, OTP codes, private keys, `password:` assignments) is never stored; password-manager apps (1Password, Bitwarden, KeePass…) are excluded; unpinned history expires after 90 days — retention is NOT indefinite
 - [x] ✅ Trust engineering: delayed retry on locked clipboard (never silently miss a copy), duplicate suppression, self-paste suppression, explorer-restart tray recovery, zero nag dialogs
-- [x] Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean) — implemented, not yet seen running
-- [x] Instant search as you type — Ditto-style substring filter, ranked by match quality (position, word-boundary, exact case) — implemented, not yet seen running
-- [x] `Enter` pastes the selected clip, `Esc`/click-away dismisses — implemented, not yet seen running
+- [x] ✅ Global hotkey `Ctrl+Shift+V` → command-palette overlay (WPF, dark, HiDPI-clean)
+- [x] ✅ Instant search as you type — Ditto-style substring filter, ranked by match quality (position, word-boundary, exact case)
+- [x] ✅ `Enter` pastes the selected clip, `Esc`/click-away dismisses
+- [x] ✅ Pin clips (`Ctrl+P` or 📌) — DB flag, pinned section on top, exempt from retention pruning
+- [x] RTF capture — stored as RTF + plain-text companion — implemented, not yet seen running
+- [x] Paste as plain text (`Ctrl+Enter`) — implemented, not yet seen running
+- [x] Image thumbnails in the overlay (async, cached) — implemented, not yet seen running
+- [x] Minimal settings (retention, max clips, excluded apps, rebindable hotkey) + autostart on login — implemented, not yet seen running
+- [x] Tray + window + exe icon — implemented, not yet seen running
+- [x] Inno Setup installer (`ClipForge-Setup-0.1.0.exe`) — built, not yet installed end-to-end
 
-**Not yet (iteration order):** search highlighting → pinning + multi-paste → paste-as-plain-text + case transforms → snippets with variables → privacy demo beat → semantic search → OCR on images → installer/polish. See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
+**Next (iteration order):** search highlighting → multi-paste → case transforms → snippets with variables → semantic search → OCR on images → cloud sync (opt-in). See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
+
+## Improving a piece (plugin seams)
 
 **Deliberately cut (v1):** cloud sync/accounts, portable mode, mobile, enterprise/team features, options maze, Ditto's bloat tail (email export, QR view, odometer…), AI chatbot.
 
