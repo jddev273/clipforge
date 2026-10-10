@@ -49,6 +49,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontSize="20"
                                        Margin="0,0,12,0" VerticalAlignment="Top"/>
@@ -57,9 +58,28 @@
                                            TextWrapping="Wrap" MaxHeight="62" TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="#8A8AA5" Margin="0,4,0,0"/>
                             </StackPanel>
+                            <Button Grid.Column="2" Content="📌" FontSize="14" Opacity="{Binding PinOpacity}"
+                                    Background="Transparent" BorderThickness="0" Padding="8,4"
+                                    VerticalAlignment="Top" ToolTip="Pin / unpin (Ctrl+P)"
+                                    Click="PinButton_Click"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
+                <ListBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock x:Name="header" Text="History" FontSize="11" Foreground="#6E6E8C"
+                                           Margin="10,10,0,2"/>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Name}" Value="0">
+                                        <Setter TargetName="header" Property="Text" Value="📌 Pinned"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ListBox.GroupStyle>
             </ListBox>
 
             <!-- footer -->

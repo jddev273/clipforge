@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using ClipForge.Core;
 
@@ -113,6 +114,10 @@ public partial class OverlayWindow : Window
     {
         var ranked = _ranker.FilterAndRank(_all, query, 200);
         clipsList.ItemsSource = ranked.Select(c => new ClipItem(c)).ToList();
+        // Pinned section on top: group by PinnedGroup (0 = pinned). The view is fresh
+        // per ItemsSource assignment, so the description is (re-)added every time.
+        var view = CollectionViewSource.GetDefaultView(clipsList.ItemsSource);
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ClipItem.PinnedGroup)));
         if (clipsList.Items.Count > 0)
             clipsList.SelectedIndex = 0;
         countText.Text = $"{clipsList.Items.Count} clip{(clipsList.Items.Count == 1 ? string.Empty : "s")}";
@@ -137,6 +142,10 @@ public partial class OverlayWindow : Window
                 PasteSelected();
                 e.Handled = true;
                 break;
+            case Key.P when Keyboard.Modifiers.HasFlag(ModifierKeys.Control):
+                TogglePinSelected();
+                e.Handled = true;
+                break;
             case Key.Down:
                 MoveSelection(1);
                 e.Handled = true;
@@ -159,6 +168,49 @@ public partial class OverlayWindow : Window
     private void ClipsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         PasteSelected();
+    }
+
+    private void PinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as System.Windows.Controls.Button)?.DataContext is ClipItem item)
+            TogglePin(item);
+    }
+
+    private void TogglePinSelected()
+    {
+        if (clipsList.SelectedItem is ClipItem item)
+            TogglePin(item);
+    }
+
+    /// <summary>
+    /// Fire-and-forget with internal fault handling (MA0134 carve-out): TogglePinAsync
+    /// catches everything and Debug-logs; a pin failure must never crash the overlay.
+    /// </summary>
+    private void TogglePin(ClipItem item)
+    {
+#pragma warning disable MA0134 // why: deliberate fire-and-forget; TogglePinAsync is fully guarded internally.
+        _ = TogglePinAsync(item);
+#pragma warning restore MA0134
+    }
+
+    private async Task TogglePinAsync(ClipItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        try
+        {
+            if (_store is null) return;
+            await _store.SetPinnedAsync(item.Clip.Id, !item.Clip.Pinned).ConfigureAwait(true);
+            // Re-query so the pinned section reorders and the row re-renders.
+            _all = (await _store.GetRecentAsync(_cacheSize).ConfigureAwait(true)).ToList();
+            ApplyFilter(searchBox.Text);
+        }
+        // CA1031: pin toggle is best-effort UI — a fault is diagnosed via Debug output, never crashes the overlay.
+        #pragma warning disable CA1031
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: pin toggle failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
     }
 
     private void PasteSelected()

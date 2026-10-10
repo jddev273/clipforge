@@ -11,6 +11,12 @@ public sealed class ClipItem
     public string Preview { get; }
     public string Meta { get; }
 
+    /// <summary>Group key for the overlay list: pinned clips form their own section on top.</summary>
+    public int PinnedGroup => Clip.Pinned ? 0 : 1;
+
+    /// <summary>Pin button: full opacity when pinned, dimmed when not.</summary>
+    public double PinOpacity => Clip.Pinned ? 1.0 : 0.3;
+
     public ClipItem(Clip clip)
     {
         ArgumentNullException.ThrowIfNull(clip);
