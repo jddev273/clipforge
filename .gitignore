@@ -5,6 +5,10 @@ out/
 dist/
 publish/
 
+# Installer build artifacts (built on the release machine, attached to GitHub releases)
+installer/app/
+installer/ClipForge-Setup-*.exe
+
 # Visual Studio / Rider
 .vs/
 .idea/

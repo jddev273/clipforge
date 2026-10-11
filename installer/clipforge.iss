@@ -6,7 +6,7 @@
 ; and run:  iscc clipforge.iss
 
 #define MyAppName "ClipForge"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "jddev273"
 #define MyAppURL "https://github.com/jddev273/clipforge"
 #define MyAppExeName "ClipForge.exe"

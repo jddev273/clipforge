@@ -17,6 +17,7 @@ miss a copy, never nag), opinionated defaults (no 100-setting options maze).
 | Date | Version | What shipped | Demo beat |
 |---|---|---|---|
 | 2026-10-10 | v0.1.0 | MVP: capture (text/HTML/images/files) → SQLite → `Ctrl+Shift+V` command-palette overlay → instant fuzzy search → `Enter` pastes. Privacy-by-default in the capture path: secret auto-detection refuses common patterns at capture (best-effort), password-manager apps excluded, 90-day retention. Trust: locked-clipboard retry, duplicate + self-paste suppression, tray recovery. | "The 20-second clip": copy 5 things → hotkey → gorgeous panel → paste. |
+| 2026-10-10 | v0.2.0 | Trust fixes: paste now snapshots the richest clipboard format and uses the clipboard sequence number so a copy made mid-paste is never clobbered (your newer copy always wins); restores bring back the full format instead of downgrading to text. Privacy wording made honest (best-effort filter, first 8KB scanned, not a guarantee); RTF-without-text-companion gap closed — RTF text runs are scanned for secrets too. | Paste 5 things in a row without losing your clipboard. |
 
 ## Up next (iteration order)
 
