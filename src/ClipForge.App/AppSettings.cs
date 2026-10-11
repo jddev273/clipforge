@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ClipForge.Core;
 
 namespace ClipForge.App;
@@ -11,8 +12,12 @@ public sealed class AppSettings
     // Defaults come from the Privacy policy (single source of truth); the user can loosen or tighten.
     public int RetentionDays { get; set; } = (int)Privacy.DefaultRetention.TotalDays;
     public int MaxUnpinnedClips { get; set; } = Privacy.MaxUnpinnedClips;
-    // Get-only IList: STJ populates it via IList.Add (satisfies CA2227/CA1002/MA0016 together).
-    public IList<string> ExcludedApps { get; } = new List<string>();
+    // Getter-only IList does NOT round-trip with STJ's default options (verified:
+    // deserialize silently yields an empty list), so the setter is private and
+    // opted in with JsonInclude. Private setter keeps CA2227 (collection should
+    // be read-only) satisfied; IList (not List) keeps CA1002/MA0016 satisfied.
+    [JsonInclude]
+    public IList<string> ExcludedApps { get; private set; } = new List<string>();
     public string Hotkey { get; set; } = "Ctrl+Shift+V";
     public bool Autostart { get; set; } = true;
 
