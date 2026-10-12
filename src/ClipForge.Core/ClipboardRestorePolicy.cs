@@ -1,18 +1,22 @@
 namespace ClipForge.Core;
 
 /// <summary>
-/// The decision behind paste's failure path: after a failed staging attempt,
+/// The decisions behind paste's failure path: after a failed staging attempt,
 /// should the pre-paste clipboard snapshot be put back?
 ///
-/// The clipboard sequence number is the witness. Staging that failed before
-/// touching the clipboard (e.g. the clipboard was locked by another app)
-/// leaves the sequence unchanged — the user's content is still there, and it
-/// may be newer than the snapshot, so restoring would clobber it. A changed
-/// sequence means staging got as far as emptying the clipboard and then
-/// failed: the snapshot is the only copy of what was there, so restore it.
+/// Attribution is the whole problem. A clipboard sequence-number delta cannot
+/// say WHO changed the clipboard — staging that failed before touching it
+/// (payload preparation failed, or the clipboard stayed locked through every
+/// open retry) leaves a delta indistinguishable from an external copy landing
+/// in the same window, and restoring on any delta clobbers that external copy
+/// with the stale snapshot. So the decision runs on facts the staging
+/// transaction itself recorded (<see cref="StageResult"/>): restore only when
+/// staging provably emptied the clipboard AND the sequence still equals the
+/// one our empty produced — i.e. the clipboard still holds exactly the state
+/// we left behind, and nobody else's content is in the way.
 /// </summary>
 public static class ClipboardRestorePolicy
 {
-    public static bool ShouldRestoreAfterFailedStage(uint sequenceBeforeStage, uint sequenceAfterStage)
-        => sequenceAfterStage != sequenceBeforeStage;
+    public static bool ShouldRestoreAfterFailedStage(StageOutcome outcome, uint emptiedSequence, uint currentSequence)
+        => outcome == StageOutcome.Emptied && currentSequence == emptiedSequence;
 }

@@ -195,65 +195,57 @@ public static class WindowsClipboard
 
     // The writers below all follow the same ordering: build the payload and fill
     // its global-memory block BEFORE the clipboard is opened and emptied, so an
-    // allocation failure can never leave an emptied clipboard behind. Inside the
-    // open block only EmptyClipboard + SetClipboardData remain. If that block
-    // does not succeed, ownership of the block never transferred to the system
-    // and we free it; on success the clipboard owns it — do not free.
+    // allocation failure can never leave an emptied clipboard behind. The open
+    // block itself is the shared StageBlock transaction. If staging does not
+    // reach StageOutcome.Set, ownership of the block never transferred to the
+    // system and we free it; on Set the clipboard owns it — do not free.
 
-    public static bool TrySetRtf(string rtf)
+    public static StageResult TrySetRtf(string rtf, uint? requireSequence = null)
     {
         ArgumentNullException.ThrowIfNull(rtf);
         uint fmt = RtfFormatId;
-        if (fmt == 0) return false;
+        if (fmt == 0) return StageResult.NotTouched;
         try
         {
             // RTF is ANSI (control words are ASCII); Latin1 round-trips the byte stream.
             var bytes = Encoding.Latin1.GetBytes(rtf + '\0');
             var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
-            if (h == IntPtr.Zero) return false;
+            if (h == IntPtr.Zero) return StageResult.NotTouched;
             var p = NativeMethods.GlobalLock(h);
-            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return StageResult.NotTouched; }
             Marshal.Copy(bytes, 0, p, bytes.Length);
             NativeMethods.GlobalUnlock(h);
-            bool ok = WithClipboardOpen(() =>
-            {
-                NativeMethods.EmptyClipboard();
-                return NativeMethods.SetClipboardData(fmt, h) != IntPtr.Zero;
-            });
-            if (!ok) NativeMethods.GlobalFree(h);
-            return ok;
+            var result = StageBlock(fmt, h, requireSequence);
+            if (result.Outcome != StageOutcome.Set) NativeMethods.GlobalFree(h);
+            return result;
         }
-        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
-        catch { return false; }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not staged", never propagate to the caller. StageBlock never throws, so a fault reaching this catch happened during payload preparation: the clipboard was not touched.
+        catch { return StageResult.NotTouched; }
         #pragma warning restore CA1031
     }
 
-    public static bool TrySetText(string text)
+    public static StageResult TrySetText(string text, uint? requireSequence = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         try
         {
             var bytes = Encoding.Unicode.GetBytes(text + '\0');
             var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
-            if (h == IntPtr.Zero) return false;
+            if (h == IntPtr.Zero) return StageResult.NotTouched;
             var p = NativeMethods.GlobalLock(h);
-            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return StageResult.NotTouched; }
             Marshal.Copy(bytes, 0, p, bytes.Length);
             NativeMethods.GlobalUnlock(h);
-            bool ok = WithClipboardOpen(() =>
-            {
-                NativeMethods.EmptyClipboard();
-                return NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, h) != IntPtr.Zero;
-            });
-            if (!ok) NativeMethods.GlobalFree(h);
-            return ok;
+            var result = StageBlock(NativeMethods.CF_UNICODETEXT, h, requireSequence);
+            if (result.Outcome != StageOutcome.Set) NativeMethods.GlobalFree(h);
+            return result;
         }
-        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
-        catch { return false; }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not staged", never propagate to the caller. StageBlock never throws, so a fault reaching this catch happened during payload preparation: the clipboard was not touched.
+        catch { return StageResult.NotTouched; }
         #pragma warning restore CA1031
     }
 
-    public static bool TrySetFileList(IReadOnlyList<string> paths)
+    public static StageResult TrySetFileList(IReadOnlyList<string> paths, uint? requireSequence = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         try
@@ -268,9 +260,9 @@ public static class WindowsClipboard
             pathBytes.AddRange(new byte[] { 0, 0 });
             int total = 20 + pathBytes.Count;
             var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)total);
-            if (h == IntPtr.Zero) return false;
+            if (h == IntPtr.Zero) return StageResult.NotTouched;
             var p = NativeMethods.GlobalLock(h);
-            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return StageResult.NotTouched; }
             Marshal.WriteInt32(p, 0, 20);      // pFiles
             Marshal.WriteInt32(p, 4, 0);       // pt.x
             Marshal.WriteInt32(p, 8, 0);       // pt.y
@@ -278,35 +270,27 @@ public static class WindowsClipboard
             Marshal.WriteInt32(p, 16, 1);      // fWide = TRUE
             Marshal.Copy(pathBytes.ToArray(), 0, p + 20, pathBytes.Count);
             NativeMethods.GlobalUnlock(h);
-            bool ok = WithClipboardOpen(() =>
-            {
-                NativeMethods.EmptyClipboard();
-                return NativeMethods.SetClipboardData(NativeMethods.CF_HDROP, h) != IntPtr.Zero;
-            });
-            if (!ok) NativeMethods.GlobalFree(h);
-            return ok;
+            var result = StageBlock(NativeMethods.CF_HDROP, h, requireSequence);
+            if (result.Outcome != StageOutcome.Set) NativeMethods.GlobalFree(h);
+            return result;
         }
-        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
-        catch { return false; }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not staged", never propagate to the caller. StageBlock never throws, so a fault reaching this catch happened during payload preparation: the clipboard was not touched.
+        catch { return StageResult.NotTouched; }
         #pragma warning restore CA1031
     }
 
-    public static bool TrySetImage(byte[] pngBytes)
+    public static StageResult TrySetImage(byte[] pngBytes, uint? requireSequence = null)
     {
         ArgumentNullException.ThrowIfNull(pngBytes);
         try
         {
-            if (!TryBuildDib(pngBytes, out var h)) return false;
-            bool ok = WithClipboardOpen(() =>
-            {
-                NativeMethods.EmptyClipboard();
-                return NativeMethods.SetClipboardData(NativeMethods.CF_DIB, h) != IntPtr.Zero;
-            });
-            if (!ok) NativeMethods.GlobalFree(h); // ownership never transferred
-            return ok;
+            if (!TryBuildDib(pngBytes, out var h)) return StageResult.NotTouched;
+            var result = StageBlock(NativeMethods.CF_DIB, h, requireSequence);
+            if (result.Outcome != StageOutcome.Set) NativeMethods.GlobalFree(h); // ownership never transferred
+            return result;
         }
-        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
-        catch { return false; }
+        #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not staged", never propagate to the caller. StageBlock never throws, so a fault reaching this catch happened during payload preparation: the clipboard was not touched.
+        catch { return StageResult.NotTouched; }
         #pragma warning restore CA1031
     }
 
@@ -363,6 +347,40 @@ public static class WindowsClipboard
     }
 
     // ---------------- internals ----------------
+
+    /// <summary>
+    /// The staging transaction for a prepared payload block, run inside one
+    /// clipboard-open block: optionally verifies the clipboard still holds
+    /// <paramref name="requireSequence"/> — the sequence of the state this
+    /// write is allowed to replace, checked here, while we hold the clipboard
+    /// open and no other writer can intervene, so the check cannot be raced —
+    /// then empties the clipboard (checking that the empty actually happened),
+    /// records the sequence our empty produced, and hands the block to the
+    /// system. Ownership of the block transfers to the system only on
+    /// <see cref="StageOutcome.Set"/>; on any other outcome the caller still
+    /// owns it. Never throws: the open helper degrades interop faults to a
+    /// false return, and whatever outcome was recorded before a fault stands
+    /// (a fault after our empty still reports Emptied, which is the truth).
+    /// </summary>
+    private static StageResult StageBlock(uint format, IntPtr block, uint? requireSequence)
+    {
+        var outcome = StageOutcome.NotTouched;
+        uint emptiedSequence = 0;
+        _ = WithClipboardOpen(() =>
+        {
+            if (requireSequence is uint required && NativeMethods.GetClipboardSequenceNumber() != required)
+                return false;
+            if (!NativeMethods.EmptyClipboard())
+                return false;
+            outcome = StageOutcome.Emptied;
+            emptiedSequence = NativeMethods.GetClipboardSequenceNumber();
+            if (NativeMethods.SetClipboardData(format, block) == IntPtr.Zero)
+                return false;
+            outcome = StageOutcome.Set;
+            return true;
+        });
+        return new StageResult(outcome, emptiedSequence);
+    }
 
     private static bool WithClipboardOpen(Func<bool> action)
     {

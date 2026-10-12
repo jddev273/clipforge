@@ -23,8 +23,8 @@ public static class PasteService
         {
             ClipType.Text => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
             ClipType.Html => WindowsClipboard.TrySetText(clip.Text ?? string.Empty),
-            ClipType.Rtf => !string.IsNullOrEmpty(clip.RtfText) && WindowsClipboard.TrySetRtf(clip.RtfText),
-            ClipType.Image => clip.ImageData is not null && WindowsClipboard.TrySetImage(clip.ImageData),
+            ClipType.Rtf => string.IsNullOrEmpty(clip.RtfText) ? StageResult.NotTouched : WindowsClipboard.TrySetRtf(clip.RtfText),
+            ClipType.Image => clip.ImageData is null ? StageResult.NotTouched : WindowsClipboard.TrySetImage(clip.ImageData),
             ClipType.Files => WindowsClipboard.TrySetFileList(clip.FilePaths),
             // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.
             _ => throw new InvalidOperationException($"Invalid ClipType value: {(int)clip.Type}.")
@@ -57,7 +57,7 @@ public static class PasteService
         return WebUtility.HtmlDecode(collapsed);
     }
 
-    private static async Task PasteCoreAsync(Func<bool> stage)
+    private static async Task PasteCoreAsync(Func<StageResult> stage)
     {
         ArgumentNullException.ThrowIfNull(stage);
 
@@ -66,18 +66,16 @@ public static class PasteService
 
         await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
 
-        // Sequence number BEFORE staging: the baseline that tells us whether a
-        // failed stage actually disturbed the clipboard (see ClipboardRestorePolicy).
-        uint sequenceBeforeStage = NativeMethods.GetClipboardSequenceNumber();
-
-        if (!stage())
+        var staged = stage();
+        if (!staged.Succeeded)
         {
-            // Staging failed. If it got as far as emptying the clipboard, the
-            // snapshot is the only copy of what the user had — put it back. If
-            // the sequence is unchanged, staging never touched the clipboard
-            // and the user's (possibly newer) content is still there: leave it.
+            // Staging failed. Restore only on the transaction's own evidence:
+            // staging provably emptied the clipboard (so the snapshot is the
+            // only copy of what was there) AND the sequence still equals the
+            // one our empty produced (so nothing newer has landed since — a
+            // user copy made during a failed stage is never overwritten).
             if (ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
-                    sequenceBeforeStage, NativeMethods.GetClipboardSequenceNumber()))
+                    staged.Outcome, staged.EmptiedSequence, NativeMethods.GetClipboardSequenceNumber()))
                 previous.Restore();
             return;
         }
