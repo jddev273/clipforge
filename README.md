@@ -4,7 +4,7 @@
 
 ClipForge is a native Windows clipboard manager: everything you copy (text, images, files) lands in a local SQLite history; `Ctrl+Shift+V` summons a command-palette overlay; type to filter the 500 most recent clips by substring, ranked by match quality; `Enter` pastes it. No account, no cloud, no telemetry — your clips never leave your machine.
 
-## Status: v0.2.0 (2026-10-10)
+## Status: v0.2.1 (2026-10-12)
 
 Marked ✅ = seen running on real Windows 10/11 on 2026-10-10. Nothing is marked
 working until it works.
@@ -22,7 +22,7 @@ working until it works.
 - [x] Image thumbnails in the overlay (async, cached) — implemented, not yet seen running
 - [x] Minimal settings (retention, max clips, excluded apps, rebindable hotkey) + autostart on login — implemented, not yet seen running
 - [x] Tray + window + exe icon — implemented, not yet seen running
-- [x] Inno Setup installer (`ClipForge-Setup-0.2.0.exe`) — built, not yet installed end-to-end
+- [x] Inno Setup installer (`ClipForge-Setup-0.2.1.exe`) — built, not yet installed end-to-end
 
 **Next (iteration order):** search highlighting → multi-paste → case transforms → snippets with variables → semantic search → OCR on images → cloud sync (opt-in). See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
 
