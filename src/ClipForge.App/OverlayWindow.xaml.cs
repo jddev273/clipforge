@@ -150,6 +150,13 @@ public partial class OverlayWindow : Window
                 TogglePinSelected();
                 e.Handled = true;
                 break;
+            case Key.Delete:
+                // The search box owns Delete while typing (forward-delete a
+                // character); anywhere else it deletes the selected clip.
+                if (e.OriginalSource is System.Windows.Controls.TextBox) break;
+                DeleteSelected();
+                e.Handled = true;
+                break;
             case Key.Down:
                 MoveSelection(1);
                 e.Handled = true;
@@ -213,6 +220,49 @@ public partial class OverlayWindow : Window
         catch (Exception ex)
         {
             Debug.WriteLine($"ClipForge: pin toggle failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
+    }
+
+    private void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as System.Windows.Controls.MenuItem)?.DataContext is ClipItem item)
+            DeleteClip(item);
+    }
+
+    private void DeleteSelected()
+    {
+        if (clipsList.SelectedItem is ClipItem item)
+            DeleteClip(item);
+    }
+
+    /// <summary>
+    /// Fire-and-forget with internal fault handling (MA0134 carve-out): DeleteClipAsync
+    /// catches everything and Debug-logs; a delete failure must never crash the overlay.
+    /// </summary>
+    private void DeleteClip(ClipItem item)
+    {
+#pragma warning disable MA0134 // why: deliberate fire-and-forget; DeleteClipAsync is fully guarded internally.
+        _ = DeleteClipAsync(item);
+#pragma warning restore MA0134
+    }
+
+    private async Task DeleteClipAsync(ClipItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        try
+        {
+            if (_store is null) return;
+            await _store.DeleteAsync(item.Clip.Id).ConfigureAwait(true);
+            // Re-query so the row disappears and the count re-renders.
+            _all = (await _store.GetRecentAsync(_cacheSize).ConfigureAwait(true)).ToList();
+            ApplyFilter(searchBox.Text);
+        }
+        // CA1031: delete is best-effort UI — a fault is diagnosed via Debug output, never crashes the overlay.
+        #pragma warning disable CA1031
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: delete failed: {ex.Message}");
         }
         #pragma warning restore CA1031
     }
