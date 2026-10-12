@@ -16,7 +16,7 @@ namespace ClipForge.App;
 /// </summary>
 public static class PasteService
 {
-    public static Task PasteAsync(Clip clip)
+    public static Task PasteAsync(Clip clip, SelfChangeRegistry? selfChanges = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
         return PasteCoreAsync(() => clip.Type switch
@@ -28,14 +28,35 @@ public static class PasteService
             ClipType.Files => WindowsClipboard.TrySetFileList(clip.FilePaths),
             // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.
             _ => throw new InvalidOperationException($"Invalid ClipType value: {(int)clip.Type}.")
-        });
+        }, StagedContentHash(clip), selfChanges);
     }
+
+    /// <summary>
+    /// The content identity of what staging will put on the clipboard, shaped
+    /// exactly as a fresh capture of that content would be — which is the
+    /// identity the capture path will compute when our own change comes back
+    /// around. HTML clips stage as plain text (see PasteAsync), so they hash
+    /// as text; RTF stages only the markup, so it hashes as markup.
+    /// </summary>
+    private static string StagedContentHash(Clip clip) => (clip.Type switch
+    {
+        ClipType.Text or ClipType.Html => new CapturedClip(ClipType.Text, clip.Text ?? string.Empty,
+            null, null, null, null, null, DateTimeOffset.UnixEpoch),
+        ClipType.Rtf => new CapturedClip(ClipType.Rtf, null,
+            null, null, null, null, null, DateTimeOffset.UnixEpoch, clip.RtfText),
+        ClipType.Image => new CapturedClip(ClipType.Image, null,
+            clip.ImageData, null, null, null, null, DateTimeOffset.UnixEpoch),
+        ClipType.Files => new CapturedClip(ClipType.Files, null,
+            null, clip.FilePaths, null, null, null, DateTimeOffset.UnixEpoch),
+        // Mandatory discard (unnamed enum values); unreachable from valid producers — fail fast.
+        _ => throw new InvalidOperationException($"Invalid ClipType value: {(int)clip.Type}.")
+    }).ContentHash;
 
     /// <summary>
     /// Pastes the plain-text rendering of a clip (formatting stripped). Images and
     /// files have no text form, so they fall back to the rich paste.
     /// </summary>
-    public static Task PastePlainTextAsync(Clip clip)
+    public static Task PastePlainTextAsync(Clip clip, SelfChangeRegistry? selfChanges = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
         string? plain = clip.Type switch
@@ -45,7 +66,11 @@ public static class PasteService
             ClipType.Rtf => clip.Text ?? string.Empty, // plain-text companion captured alongside the RTF
             _ => null,
         };
-        return plain is null ? PasteAsync(clip) : PasteCoreAsync(() => WindowsClipboard.TrySetText(plain));
+        if (plain is null) return PasteAsync(clip, selfChanges);
+        // Staged as plain text, so it hashes as a plain-text capture.
+        string stagedHash = new CapturedClip(ClipType.Text, plain,
+            null, null, null, null, null, DateTimeOffset.UnixEpoch).ContentHash;
+        return PasteCoreAsync(() => WindowsClipboard.TrySetText(plain), stagedHash, selfChanges);
     }
 
     /// <summary>Best-effort HTML-to-text for paste-as-plain-text (mirrors the capture-side tag strip).</summary>
@@ -57,7 +82,7 @@ public static class PasteService
         return WebUtility.HtmlDecode(collapsed);
     }
 
-    private static async Task PasteCoreAsync(Func<StageResult> stage)
+    private static async Task PasteCoreAsync(Func<StageResult> stage, string stagedContentHash, SelfChangeRegistry? selfChanges)
     {
         ArgumentNullException.ThrowIfNull(stage);
 
@@ -67,39 +92,16 @@ public static class PasteService
         var previous = ClipboardSnapshot.Capture();
         uint sequenceAtSnapshot = NativeMethods.GetClipboardSequenceNumber();
 
+        RegisterSelfChanges(stagedContentHash, previous, selfChanges);
+
         await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
 
-        // Did the clipboard move while focus settled? Then the snapshot is
-        // stale — staging would destroy the newer content and the restore
-        // would put the stale snapshot back over its slot. Re-capture instead,
-        // so the restore target is the user's content as it actually is now.
-        if (ClipboardRestorePolicy.DecideSnapshotAction(
-                sequenceAtSnapshot, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: false)
-            == SnapshotAction.Resnapshot)
-        {
-            uint sequenceBeforeRecapture = NativeMethods.GetClipboardSequenceNumber();
-            previous = ClipboardSnapshot.Capture();
-            // Moved AGAIN during the re-capture: no snapshot can be trusted to
-            // match the user's state, so this paste restores nothing.
-            if (ClipboardRestorePolicy.DecideSnapshotAction(
-                    sequenceBeforeRecapture, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: true)
-                == SnapshotAction.DisableRestore)
-                previous = ClipboardSnapshot.Empty;
-        }
+        previous = SettleSnapshot(previous, sequenceAtSnapshot, selfChanges);
 
         var staged = stage();
         if (!staged.Succeeded)
         {
-            // Staging failed. Restore only on the transaction's own evidence:
-            // staging provably emptied the clipboard (so the snapshot is the
-            // only copy of what was there) AND the sequence still equals the
-            // one our empty produced (so nothing newer has landed since — a
-            // user copy made during a failed stage is never overwritten). The
-            // restore write re-verifies that sequence inside its own open
-            // block, so the check and the write cannot be raced either.
-            if (ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
-                    staged.Outcome, staged.EmptiedSequence, NativeMethods.GetClipboardSequenceNumber()))
-                previous.Restore(staged.EmptiedSequence);
+            HandleFailedStage(staged, previous);
             return;
         }
         // Sequence number AFTER staging identifies the clipboard state we created.
@@ -115,6 +117,83 @@ public static class PasteService
                 stagedSequence, NativeMethods.GetClipboardSequenceNumber())) return;
 
         previous.Restore(stagedSequence);
+    }
+
+    /// <summary>
+    /// The failed-stage path. Restores the snapshot only on the transaction's
+    /// own evidence: staging provably emptied the clipboard (so the snapshot
+    /// is the only copy of what was there) AND the sequence still equals the
+    /// one our empty produced (so nothing newer has landed since — a user
+    /// copy made during a failed stage is never overwritten). The restore
+    /// write re-verifies that sequence inside its own open block, so the
+    /// check and the write cannot be raced either. (MA0051: extracted from
+    /// PasteCoreAsync.)
+    /// </summary>
+    private static void HandleFailedStage(StageResult staged, ClipboardSnapshot previous)
+    {
+        if (ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
+                staged.Outcome, staged.EmptiedSequence, NativeMethods.GetClipboardSequenceNumber()))
+            previous.Restore(staged.EmptiedSequence);
+    }
+
+    /// <summary>
+    /// Identity suppression: register the changes this paste is about to cause
+    /// — the staged clip, and the snapshot that will be restored at the end —
+    /// so the captures of those changes are recognized as ours and dropped. A
+    /// genuine copy of different content, even one made mid-paste, matches
+    /// neither registration and is kept. Each hash is registered TWICE,
+    /// because each change is seen by the capture path twice: once as the real
+    /// clipboard update, and once when the post-paste recovery read re-reads
+    /// the final clipboard state (App.OnPasteRequested) — the read that
+    /// rescues a genuine copy whose update was missed, and that must not
+    /// re-save our own content as a duplicate history entry when it re-reads
+    /// it. (MA0051: extracted from PasteCoreAsync.)
+    /// </summary>
+    private static void RegisterSelfChanges(string stagedContentHash, ClipboardSnapshot previous, SelfChangeRegistry? selfChanges)
+    {
+        if (selfChanges is null) return;
+        selfChanges.Register(stagedContentHash);
+        selfChanges.Register(stagedContentHash);
+        if (previous.HasContent)
+        {
+            selfChanges.Register(previous.ContentHash);
+            selfChanges.Register(previous.ContentHash);
+        }
+    }
+
+    /// <summary>
+    /// Settles which snapshot the restore may use once the focus-settle delay
+    /// has elapsed. If the clipboard moved during the delay, the snapshot is
+    /// stale — staging would destroy the newer content and the restore would
+    /// put the stale snapshot back over its slot — so it is re-captured, making
+    /// the restore target the user's content as it actually is at stage time.
+    /// If the clipboard moved AGAIN during that re-capture, no snapshot can be
+    /// trusted and the paste restores nothing (ClipboardSnapshot.Empty). A
+    /// re-captured snapshot is registered with the self-change registry in
+    /// place of the original (whose registration simply expires).
+    /// (MA0051: extracted from PasteCoreAsync.)
+    /// </summary>
+    private static ClipboardSnapshot SettleSnapshot(ClipboardSnapshot snapshot, uint sequenceAtSnapshot, SelfChangeRegistry? selfChanges)
+    {
+        if (ClipboardRestorePolicy.DecideSnapshotAction(
+                sequenceAtSnapshot, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: false)
+            != SnapshotAction.Resnapshot)
+            return snapshot;
+
+        uint sequenceBeforeRecapture = NativeMethods.GetClipboardSequenceNumber();
+        var fresh = ClipboardSnapshot.Capture();
+        if (ClipboardRestorePolicy.DecideSnapshotAction(
+                sequenceBeforeRecapture, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: true)
+            == SnapshotAction.DisableRestore)
+            return ClipboardSnapshot.Empty;
+        if (fresh.HasContent)
+        {
+            // Registered twice, like every self-change (see PasteCoreAsync):
+            // the restore's own update, and the post-paste recovery read.
+            selfChanges?.Register(fresh.ContentHash);
+            selfChanges?.Register(fresh.ContentHash);
+        }
+        return fresh;
     }
 
     /// <summary>
@@ -148,6 +227,25 @@ public static class PasteService
         /// </summary>
         public static ClipboardSnapshot Empty { get; } =
             new(ClipType.Text, null, null, null, Array.Empty<string>());
+
+        /// <summary>True when the snapshot holds a payload a restore could write (and a capture could hash).</summary>
+        public bool HasContent => _type switch
+        {
+            ClipType.Files => _files.Length > 0,
+            ClipType.Image => _image is not null,
+            ClipType.Rtf => !string.IsNullOrEmpty(_rtf),
+            _ => !string.IsNullOrEmpty(_text)
+        };
+
+        /// <summary>
+        /// The content identity of the snapshot payload, computed with the same
+        /// machinery a fresh capture of this content produces — so when the
+        /// restore puts this content back on the clipboard and its change comes
+        /// around the capture path, the identity matches what PasteCoreAsync
+        /// registered before restoring.
+        /// </summary>
+        public string ContentHash => new CapturedClip(_type, _text, _image, _files,
+            null, null, null, DateTimeOffset.UnixEpoch, _rtf).ContentHash;
 
         public static ClipboardSnapshot Capture()
         {

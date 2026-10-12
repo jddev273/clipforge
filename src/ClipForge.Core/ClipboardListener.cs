@@ -31,7 +31,6 @@ public sealed class ClipboardListener : IDisposable
     private readonly WindowProc _wndProc;
     private readonly ManualResetEventSlim _ready = new(false);
     private readonly IReadOnlyList<IClipFormatHandler> _handlers;
-    private DateTime _suppressUntilUtc = DateTime.MinValue;
     private bool _disposed;
 
     public ClipboardListener(IReadOnlyList<IClipFormatHandler> handlers)
@@ -66,38 +65,6 @@ public sealed class ClipboardListener : IDisposable
             throw new TimeoutException("Clipboard listener thread did not start.");
         if (_hwnd.IsNull)
             throw new InvalidOperationException("Clipboard listener window was not created.");
-    }
-
-    /// <summary>
-    /// Suppresses capture for <paramref name="duration"/> — call around our own
-    /// paste operations so we don't re-capture what we just pasted.
-    /// </summary>
-    public IDisposable SuppressCapture(TimeSpan duration)
-    {
-        if (duration < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(duration), "Capture suppression cannot be negative.");
-        _suppressUntilUtc = DateTime.UtcNow + duration;
-        return new Suppressor(this, duration);
-    }
-
-    private sealed class Suppressor : IDisposable
-    {
-        private readonly ClipboardListener _owner;
-        private readonly TimeSpan _duration;
-        private readonly DateTime _until;
-        public Suppressor(ClipboardListener owner, TimeSpan duration)
-        {
-            _owner = owner;
-            _duration = duration;
-            _until = DateTime.UtcNow + duration;
-        }
-        public void Dispose()
-        {
-            // Only clear if nobody extended the window since.
-            if (_owner._suppressUntilUtc <= _until + TimeSpan.FromMilliseconds(50))
-                _owner._suppressUntilUtc = DateTime.MinValue;
-            // why no SuppressFinalize: sealed type, no finalizer — IDISP024.
-        }
     }
 
     private void MessageLoop()
@@ -146,7 +113,14 @@ public sealed class ClipboardListener : IDisposable
 
     /// <summary>
     /// Reads whatever is on the clipboard right now. Used at startup (so the
-    /// pre-existing clipboard content becomes the first history entry) and by tests.
+    /// pre-existing clipboard content becomes the first history entry), by
+    /// tests, and as the post-paste recovery read: a genuine copy whose
+    /// update was missed during a paste is still on the clipboard afterwards,
+    /// and one explicit read through the normal captured path is what puts it
+    /// in history. (The listener itself never suppresses updates anymore —
+    /// telling our own paste changes from the user's is an identity check,
+    /// <see cref="SelfChangeRegistry"/>, applied by the app on what it
+    /// captures, not a time window applied here.)
     /// </summary>
     public static CapturedClip? CaptureCurrent(IReadOnlyList<IClipFormatHandler> handlers)
     {
@@ -156,8 +130,6 @@ public sealed class ClipboardListener : IDisposable
 
     private void OnClipboardUpdate()
     {
-        if (DateTime.UtcNow < _suppressUntilUtc) return;
-
         var captured = TryCapture(_handlers);
         if (captured is null)
         {

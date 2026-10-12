@@ -38,6 +38,8 @@ public partial class App : System.Windows.Application, IDisposable
     private AppSettings _settings = new();
 #pragma warning restore CA1859
     private string _lastSignature = string.Empty;
+    /// <summary>Identity registry for the clipboard changes our own pastes cause (see PasteService).</summary>
+    private readonly SelfChangeRegistry _selfChanges = new();
     private bool _disposed;
 
     // VSTHRD100: framework-mandated override signature — WPF requires async void for OnStartup.
@@ -285,6 +287,13 @@ public partial class App : System.Windows.Application, IDisposable
         var captured = e.Captured;
         try
         {
+            // Self-change suppression, by identity: a paste registers the content
+            // hashes of the changes it is about to cause, and a capture matching
+            // a registration is one of ours — drop it, consuming the registration.
+            // Everything else is a genuine copy and flows through the filters
+            // below, even if it was made while a paste was in flight.
+            if (_selfChanges.TryConsume(captured.ContentHash)) return;
+
             // Privacy-by-default: password managers, user-excluded apps and detected
             // secrets are refused at the capture boundary (best-effort filter, not a guarantee).
             if (Privacy.IsSensitiveApp(captured.SourceApp) || _settings.IsExcludedApp(captured.SourceApp)) return;
@@ -320,12 +329,23 @@ public partial class App : System.Windows.Application, IDisposable
         _overlay?.HideOverlay();
         try
         {
-            // Don't re-capture what we're about to paste.
-            using var _ = _listener?.SuppressCapture(TimeSpan.FromSeconds(3));
+            // The paste registers its own clipboard changes with the identity
+            // registry (see OnClipCaptured) — no time-window suppression, so a
+            // genuine copy made during the paste is captured like any other.
             if (e.PlainText)
-                await PasteService.PastePlainTextAsync(clip).ConfigureAwait(true);
+                await PasteService.PastePlainTextAsync(clip, _selfChanges).ConfigureAwait(true);
             else
-                await PasteService.PasteAsync(clip).ConfigureAwait(true);
+                await PasteService.PasteAsync(clip, _selfChanges).ConfigureAwait(true);
+
+            // Recovery read: a genuine copy made during the paste whose update
+            // was missed anyway (a transiently locked clipboard can eat the
+            // notification and its one retry) is still on the clipboard — read
+            // it once through the normal captured path. Our staged/restored
+            // content comes back too, and is dropped there: PasteService
+            // registered each self-change twice, once for its real update and
+            // once for this read (with the duplicate check behind that).
+            var recovered = ClipboardListener.CaptureCurrent(_formatHandlers);
+            if (recovered is not null) OnClipCaptured(this, new ClipCapturedEventArgs(recovered));
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)

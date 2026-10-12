@@ -51,12 +51,27 @@ analyzer rules as the product code; the build must stay at 0 warnings.
   handler that claims a format but fails to capture falls through to
   lower-priority handlers instead of dropping the copy (regression tests
   for a real lost-copy bug).
-- **Paste restore decision** — when staging a paste fails, the pre-paste
-  clipboard snapshot is restored only if the clipboard sequence number
-  moved during staging (i.e. staging actually emptied the clipboard); an
-  untouched clipboard is never overwritten with the older snapshot. The
-  decision lives in Core and is tested there; the staging itself is
-  Windows-only and manually verified.
+- **Paste restore decisions** — the staging transaction reports how far it
+  got (untouched / emptied / set), and the failure-path decision runs on
+  that evidence: the pre-paste snapshot is restored only if staging
+  provably emptied the clipboard *and* the sequence still equals the one
+  our empty produced. A sequence delta alone proves nothing — an external
+  copy during a failed stage, or after our empty, always wins over the
+  restore. Snapshot freshness across the focus-settle delay is decided the
+  same way: a copy landing during the delay makes the snapshot stale (it is
+  re-captured, or the restore is disabled if the clipboard moves again
+  mid-recapture), and the success-path restore fires only while the
+  clipboard still holds what we staged. The decisions live in Core and are
+  tested there as truth tables; the staging itself is Windows-only and
+  manually verified.
+- **Self-change registry** — capture suppression for our own paste changes
+  is by content identity, not by time window: a paste registers the hashes
+  of the changes it will cause, and a capture matching a registration is
+  dropped, consuming it (one registration suppresses exactly one capture).
+  A genuine copy of different content — even one made mid-paste — is never
+  suppressed, and registrations expire so a missed self-change cannot
+  suppress an identical copy later. The registry lives in Core and is
+  tested there; the capture path it gates is Windows-only.
 
 ## What isn't covered, and why
 
