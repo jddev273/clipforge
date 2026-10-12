@@ -61,10 +61,31 @@ public static class PasteService
     {
         ArgumentNullException.ThrowIfNull(stage);
 
-        // Snapshot the richest clipboard format so we can put it back afterward.
+        // Snapshot the richest clipboard format so we can put it back afterward,
+        // and baseline its sequence number: without a sample taken NOW, a copy
+        // landing during the settle delay below is undetectable in principle.
         var previous = ClipboardSnapshot.Capture();
+        uint sequenceAtSnapshot = NativeMethods.GetClipboardSequenceNumber();
 
         await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
+
+        // Did the clipboard move while focus settled? Then the snapshot is
+        // stale — staging would destroy the newer content and the restore
+        // would put the stale snapshot back over its slot. Re-capture instead,
+        // so the restore target is the user's content as it actually is now.
+        if (ClipboardRestorePolicy.DecideSnapshotAction(
+                sequenceAtSnapshot, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: false)
+            == SnapshotAction.Resnapshot)
+        {
+            uint sequenceBeforeRecapture = NativeMethods.GetClipboardSequenceNumber();
+            previous = ClipboardSnapshot.Capture();
+            // Moved AGAIN during the re-capture: no snapshot can be trusted to
+            // match the user's state, so this paste restores nothing.
+            if (ClipboardRestorePolicy.DecideSnapshotAction(
+                    sequenceBeforeRecapture, NativeMethods.GetClipboardSequenceNumber(), resnapshotAttempted: true)
+                == SnapshotAction.DisableRestore)
+                previous = ClipboardSnapshot.Empty;
+        }
 
         var staged = stage();
         if (!staged.Succeeded)
@@ -73,10 +94,12 @@ public static class PasteService
             // staging provably emptied the clipboard (so the snapshot is the
             // only copy of what was there) AND the sequence still equals the
             // one our empty produced (so nothing newer has landed since — a
-            // user copy made during a failed stage is never overwritten).
+            // user copy made during a failed stage is never overwritten). The
+            // restore write re-verifies that sequence inside its own open
+            // block, so the check and the write cannot be raced either.
             if (ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
                     staged.Outcome, staged.EmptiedSequence, NativeMethods.GetClipboardSequenceNumber()))
-                previous.Restore();
+                previous.Restore(staged.EmptiedSequence);
             return;
         }
         // Sequence number AFTER staging identifies the clipboard state we created.
@@ -86,10 +109,12 @@ public static class PasteService
         await Task.Delay(500).ConfigureAwait(false);
 
         // If the user copied something new while we were pasting, their copy wins:
-        // never restore over it.
-        if (NativeMethods.GetClipboardSequenceNumber() != stagedSequence) return;
+        // never restore over it. (The restore write re-verifies the same
+        // sequence inside its open block — this check is the cheap early-out.)
+        if (!ClipboardRestorePolicy.ShouldRestoreAfterPaste(
+                stagedSequence, NativeMethods.GetClipboardSequenceNumber())) return;
 
-        previous.Restore();
+        previous.Restore(stagedSequence);
     }
 
     /// <summary>
@@ -115,6 +140,15 @@ public static class PasteService
             _files = files;
         }
 
+        /// <summary>
+        /// The no-restore snapshot: taken when the clipboard moved too fast to
+        /// baseline (see the re-capture path in PasteCoreAsync). Its Restore is
+        /// a no-op — the same empty shape Capture returns for an empty or
+        /// unreadable clipboard, whose restores have always been no-ops.
+        /// </summary>
+        public static ClipboardSnapshot Empty { get; } =
+            new(ClipType.Text, null, null, null, Array.Empty<string>());
+
         public static ClipboardSnapshot Capture()
         {
             // Richest first — mirrors the format-handler priority order.
@@ -129,26 +163,29 @@ public static class PasteService
             return new ClipboardSnapshot(ClipType.Text, null, null, null, Array.Empty<string>());
         }
 
-        public void Restore()
+        public void Restore(uint? requireSequence = null)
         {
-            // Restore runs after a successful paste and must never throw or clobber:
-            // the sequence-number guard in PasteCoreAsync already verified the clipboard
-            // still holds what we staged. Every setter below is itself best-effort.
+            // Restore must never throw or clobber. PasteCoreAsync passes the
+            // sequence of the clipboard state this restore may replace, and the
+            // writers re-verify it inside their clipboard-open block — while
+            // holding the clipboard open, where no other writer can slip a
+            // change between the check and the write. Every setter below is
+            // itself best-effort.
             try
             {
                 switch (_type)
                 {
                     case ClipType.Files when _files.Length > 0:
-                        WindowsClipboard.TrySetFileList(_files);
+                        WindowsClipboard.TrySetFileList(_files, requireSequence);
                         break;
                     case ClipType.Image when _image is not null:
-                        WindowsClipboard.TrySetImage(_image);
+                        WindowsClipboard.TrySetImage(_image, requireSequence);
                         break;
                     case ClipType.Rtf when !string.IsNullOrEmpty(_rtf):
-                        WindowsClipboard.TrySetRtf(_rtf);
+                        WindowsClipboard.TrySetRtf(_rtf, requireSequence);
                         break;
                     case ClipType.Text when !string.IsNullOrEmpty(_text):
-                        WindowsClipboard.TrySetText(_text);
+                        WindowsClipboard.TrySetText(_text, requireSequence);
                         break;
                 }
             }

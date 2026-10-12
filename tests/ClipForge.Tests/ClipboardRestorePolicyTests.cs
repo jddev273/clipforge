@@ -79,4 +79,65 @@ public sealed class ClipboardRestorePolicyTests
         Assert.False(ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
             StageOutcome.Set, emptiedSequence: 42, currentSequence: 42));
     }
+
+    // ---- Snapshot freshness across the focus-settle delay ----
+    //
+    // The baseline is sampled at snapshot time. A copy landing during the
+    // ~120 ms settle delay used to be invisible: staging destroyed it and the
+    // restore put the stale snapshot back over its slot. The decision below is
+    // what runs at each boundary — it must never end in restoring a snapshot
+    // known to be stale.
+
+    [Fact]
+    public void UnchangedSequenceAcrossTheDelayKeepsTheSnapshot()
+    {
+        Assert.Equal(SnapshotAction.UseSnapshot, ClipboardRestorePolicy.DecideSnapshotAction(
+            sequenceAtSnapshot: 41, currentSequence: 41, resnapshotAttempted: false));
+    }
+
+    [Fact]
+    public void CopyDuringTheDelayMakesTheSnapshotStale()
+    {
+        Assert.Equal(SnapshotAction.Resnapshot, ClipboardRestorePolicy.DecideSnapshotAction(
+            sequenceAtSnapshot: 41, currentSequence: 42, resnapshotAttempted: false));
+    }
+
+    [Fact]
+    public void WraparoundDuringTheDelayIsStillAChange()
+    {
+        Assert.Equal(SnapshotAction.Resnapshot, ClipboardRestorePolicy.DecideSnapshotAction(
+            sequenceAtSnapshot: uint.MaxValue, currentSequence: 0, resnapshotAttempted: false));
+    }
+
+    [Fact]
+    public void StableAcrossTheRecaptureUsesTheFreshSnapshot()
+    {
+        // Second call: the "snapshot" baseline is the sequence sampled just
+        // before the re-capture, and the clipboard held still across it.
+        Assert.Equal(SnapshotAction.UseSnapshot, ClipboardRestorePolicy.DecideSnapshotAction(
+            sequenceAtSnapshot: 42, currentSequence: 42, resnapshotAttempted: true));
+    }
+
+    [Fact]
+    public void SecondChangeDuringTheRecaptureDisablesTheRestore()
+    {
+        Assert.Equal(SnapshotAction.DisableRestore, ClipboardRestorePolicy.DecideSnapshotAction(
+            sequenceAtSnapshot: 42, currentSequence: 43, resnapshotAttempted: true));
+    }
+
+    // ---- The success-path restore decision ----
+
+    [Fact]
+    public void ClipboardStillHoldingTheStagedContentRestores()
+    {
+        Assert.True(ClipboardRestorePolicy.ShouldRestoreAfterPaste(
+            stagedSequence: 42, currentSequence: 42));
+    }
+
+    [Fact]
+    public void CopyDuringThePasteWaitDefeatsTheRestore()
+    {
+        Assert.False(ClipboardRestorePolicy.ShouldRestoreAfterPaste(
+            stagedSequence: 42, currentSequence: 43));
+    }
 }

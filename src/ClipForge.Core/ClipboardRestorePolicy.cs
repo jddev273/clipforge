@@ -19,4 +19,29 @@ public static class ClipboardRestorePolicy
 {
     public static bool ShouldRestoreAfterFailedStage(StageOutcome outcome, uint emptiedSequence, uint currentSequence)
         => outcome == StageOutcome.Emptied && currentSequence == emptiedSequence;
+
+    /// <summary>
+    /// The success-path counterpart: after a successful paste, restore the
+    /// snapshot only if the clipboard still holds exactly what we staged. A
+    /// changed sequence means the user copied something newer mid-paste —
+    /// their copy always wins. (The restore write re-verifies this inside its
+    /// own clipboard-open block; this check is the cheap early-out.)
+    /// </summary>
+    public static bool ShouldRestoreAfterPaste(uint stagedSequence, uint currentSequence)
+        => currentSequence == stagedSequence;
+
+    /// <summary>
+    /// Snapshot freshness across the focus-settle delay. The sequence sampled
+    /// at snapshot time is the baseline: unchanged means the snapshot is the
+    /// user's current state. Changed means the snapshot went stale during the
+    /// delay — re-capture it (once). Changed again across that re-capture
+    /// (<paramref name="resnapshotAttempted"/> on the second call) means no
+    /// snapshot can be trusted, so restore is disabled for this paste. Under
+    /// no path is a stale snapshot restored.
+    /// </summary>
+    public static SnapshotAction DecideSnapshotAction(uint sequenceAtSnapshot, uint currentSequence, bool resnapshotAttempted)
+    {
+        if (currentSequence == sequenceAtSnapshot) return SnapshotAction.UseSnapshot;
+        return resnapshotAttempted ? SnapshotAction.DisableRestore : SnapshotAction.Resnapshot;
+    }
 }
