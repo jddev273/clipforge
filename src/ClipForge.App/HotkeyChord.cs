@@ -1,5 +1,7 @@
 using System.Windows.Input;
 
+using ClipForge.Core;
+
 namespace ClipForge.App;
 
 /// <summary>A global hotkey chord: modifiers + one key. Parses and formats "Ctrl+Shift+V".</summary>
@@ -21,34 +23,33 @@ public sealed class HotkeyChord
     public static bool TryParse(string? s, out HotkeyChord? chord)
     {
         chord = null;
-        if (string.IsNullOrWhiteSpace(s)) return false;
-        string[] parts = s.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 2) return false; // at least one modifier + a key
-        ModifierKeys mods = ModifierKeys.None;
-        for (int i = 0; i < parts.Length - 1; i++)
-        {
-            ModifierKeys m = parts[i].ToUpperInvariant() switch
-            {
-                "CTRL" or "CONTROL" => ModifierKeys.Control,
-                "ALT" => ModifierKeys.Alt,
-                "SHIFT" => ModifierKeys.Shift,
-                "WIN" or "WINDOWS" => ModifierKeys.Windows,
-                _ => (ModifierKeys)(-1), // sentinel: unknown modifier name
-            };
-            if (m == (ModifierKeys)(-1)) return false;
-            mods |= m;
-        }
-        if (!Enum.TryParse(parts[^1], ignoreCase: true, out Key key)) return false;
+        // Structure + modifiers are parsed in Core (HotkeyChordParser —
+        // framework-free, unit-tested). This class stays the authority on
+        // which key NAMES are real WPF keys, so accept/reject behavior is
+        // unchanged: everything the parser passes still faces the same
+        // Key parse and modifier-key check below.
+        if (!HotkeyChordParser.TryParse(s, out var parsed) || parsed is null) return false;
+        if (!Enum.TryParse(parsed.KeyName, ignoreCase: true, out Key key)) return false;
         if (IsModifierKey(key)) return false;
         try
         {
-            chord = new HotkeyChord(mods, key);
+            chord = new HotkeyChord(ToModifierKeys(parsed.Modifiers), key);
         }
         catch (ArgumentException)
         {
             return false;
         }
         return true;
+    }
+
+    private static ModifierKeys ToModifierKeys(HotkeyModifiers modifiers)
+    {
+        ModifierKeys m = ModifierKeys.None;
+        if (modifiers.HasFlag(HotkeyModifiers.Alt)) m |= ModifierKeys.Alt;
+        if (modifiers.HasFlag(HotkeyModifiers.Control)) m |= ModifierKeys.Control;
+        if (modifiers.HasFlag(HotkeyModifiers.Shift)) m |= ModifierKeys.Shift;
+        if (modifiers.HasFlag(HotkeyModifiers.Windows)) m |= ModifierKeys.Windows;
+        return m;
     }
 
     /// <summary>Win32 MOD_* flags and virtual-key code for RegisterHotKey.</summary>
