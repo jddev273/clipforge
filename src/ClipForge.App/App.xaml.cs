@@ -174,26 +174,11 @@ public partial class App : System.Windows.Application, IDisposable
     private void ApplySettings(AppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        string previousChordText = _settings.Hotkey;
         _settings = settings;
         settings.Save();
 
-        // Rebind the hotkey: build the new service before disposing the old one, so a
-        // taken chord keeps the previous hotkey instead of leaving none registered.
-        if (_overlay is not null)
-        {
-            try
-            {
-                var next = StartHotkey(_overlay, settings.Hotkey);
-                _hotkeys?.Dispose();
-                _hotkeys = next;
-            }
-            #pragma warning disable CA1031 // why: a taken/invalid chord keeps the previous hotkey; Debug-logged.
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"ClipForge: hotkey rebind failed, keeping previous: {ex.Message}");
-            }
-            #pragma warning restore CA1031
-        }
+        RebindHotkey(previousChordText, settings.Hotkey);
 
         try
         {
@@ -206,6 +191,69 @@ public partial class App : System.Windows.Application, IDisposable
         }
         #pragma warning restore CA1031
     }
+
+    /// <summary>
+    /// Applies a hotkey change from a settings save. The old and new services share
+    /// one (HWND, ID) registration slot, so the old service must be unregistered
+    /// BEFORE the new one registers — registering first and disposing after
+    /// unregisters the new chord too (the "hotkey dies on any settings save" bug).
+    /// An unchanged chord leaves the live registration untouched; a failed
+    /// registration rolls back to the previous chord.
+    /// </summary>
+    private void RebindHotkey(string previousChordText, string newChordText)
+    {
+        if (_overlay is null) return;
+        if (_hotkeys is not null && ChordsEqual(previousChordText, newChordText)) return;
+
+        _hotkeys?.Dispose();
+        _hotkeys = null;
+        try
+        {
+            _hotkeys = StartHotkey(_overlay, newChordText);
+        }
+        #pragma warning disable CA1031 // why: a taken/invalid chord rolls back to the previous hotkey; Debug-logged.
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: hotkey rebind failed, restoring previous: {ex.Message}");
+            RestoreHotkey(previousChordText);
+        }
+        #pragma warning restore CA1031
+    }
+
+    /// <summary>
+    /// Rollback for a failed rebind: re-register the previous chord and revert the
+    /// persisted setting, so a restart doesn't retry the taken chord. The user is
+    /// told with the settings error dialog (same caption/icon as SettingsWindow).
+    /// </summary>
+    private void RestoreHotkey(string previousChordText)
+    {
+        if (_overlay is null) return;
+        try
+        {
+            // IDISP003: RebindHotkey disposed and nulled _hotkeys immediately before
+            // calling this rollback; the analyzer cannot prove that across methods.
+#pragma warning disable IDISP003
+            _hotkeys = StartHotkey(_overlay, previousChordText);
+#pragma warning restore IDISP003
+            _settings.Hotkey = previousChordText;
+            _settings.Save();
+            MessageBox.Show(
+                $"That hotkey is already used by another app, so the previous hotkey ({previousChordText}) stays in effect.",
+                "ClipForge Settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        #pragma warning disable CA1031 // why: if even the previous chord can't be re-registered, the tray icon still summons the overlay; Debug-logged.
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ClipForge: hotkey rollback failed: {ex.Message}");
+        }
+        #pragma warning restore CA1031
+    }
+
+    /// <summary>Same chord = same Win32 registration: equal modifiers + key.</summary>
+    private static bool ChordsEqual(string a, string b) =>
+        HotkeyChord.TryParse(a, out var chordA) && chordA is not null &&
+        HotkeyChord.TryParse(b, out var chordB) && chordB is not null &&
+        chordA.ToWin32() == chordB.ToWin32();
 
     /// <summary>Opens the store, enforces retention, and seeds duplicate suppression. (MA0051: extracted from OnStartup.)</summary>
     private async Task<IClipStore> InitializeStoreAsync()
