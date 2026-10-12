@@ -2,7 +2,7 @@
 
 **Ditto has owned this space for years but looks like 2008. ClipForge is the rebuild for 2026 — free, fast, beautiful, built in public by AI agents.**
 
-ClipForge is a native Windows clipboard manager: everything you copy (text, images, files) lands in a local SQLite history; `Ctrl+Shift+V` summons a command-palette overlay; fuzzy search finds anything instantly; `Enter` pastes it. No account, no cloud, no telemetry — your clips never leave your machine.
+ClipForge is a native Windows clipboard manager: everything you copy (text, images, files) lands in a local SQLite history; `Ctrl+Shift+V` summons a command-palette overlay; type to filter the 500 most recent clips by substring, ranked by match quality; `Enter` pastes it. No account, no cloud, no telemetry — your clips never leave your machine.
 
 ## Status: v0.2.0 (2026-10-10)
 
@@ -25,6 +25,15 @@ working until it works.
 - [x] Inno Setup installer (`ClipForge-Setup-0.2.0.exe`) — built, not yet installed end-to-end
 
 **Next (iteration order):** search highlighting → multi-paste → case transforms → snippets with variables → semantic search → OCR on images → cloud sync (opt-in). See [docs/BUILD_IN_PUBLIC.md](docs/BUILD_IN_PUBLIC.md).
+
+## Known limitations
+
+Stated plainly, so nobody has to discover them the hard way:
+
+- **Search scope.** The overlay searches the 500 most recent clips, matching against each clip's preview (the first 200 characters) and source app — not the full stored text. Older clips are in the database but not reachable from search yet.
+- **Unencrypted database.** History is a plain SQLite file in your user profile (`%LOCALAPPDATA%/ClipForge/clips.db`). Anyone who can read files as your Windows user can read it. Encryption is not implemented yet.
+- **Secret filter window.** The secret scan examines the first 8 KB of a text capture, and images are never scanned. It is a best-effort filter, not a guarantee.
+- **HTML pastes as plain text, for now.** HTML clips are captured with their markup, but pasting one currently inserts the markup as plain text — a rich, formatted HTML paste is not implemented yet. (`Ctrl+Enter` strips the tags on purpose.)
 
 ## Improving a piece (plugin seams)
 
@@ -49,7 +58,7 @@ dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release /p:PublishProfi
 
 The solution also compiles on Linux/macOS (`EnableWindowsTargeting`) for CI — it just can't *run* there.
 
-Tests for the platform-independent projects (Core, Secrets, Search, Storage.Sqlite) run anywhere: `dotnet test ClipForge.sln -c Release`. See [TESTING.md](TESTING.md) for what's covered and what isn't.
+An automated test suite (xUnit) covers the platform-independent projects (Core, Secrets, Search, Storage.Sqlite) and runs anywhere: `dotnet test ClipForge.sln -c Release`. See [TESTING.md](TESTING.md) for what's covered and what isn't.
 
 ## Project layout
 
@@ -86,7 +95,9 @@ To swap a piece: implement the interface with a parameterless constructor, build
 the DLL, drop it in the `plugins/` folder next to `ClipForge.exe`, restart.
 The first plugin implementation found wins for single-implementation seams
 (secrets, search, store); format handlers are additive, tried in `Priority`
-order. A bad DLL is skipped with a Debug note — it can never crash the app.
+order. A DLL that fails to *load* is skipped with a Debug note. Beyond that
+there is no isolation: plugin code runs in-process, so a plugin that hangs or
+faults can hang or crash the app — load only plugins you trust.
 No versioning, no sandboxing, no signing: this is a contributor seam, not a marketplace.
 
 ## Privacy

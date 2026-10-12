@@ -47,6 +47,16 @@ analyzer rules as the product code; the build must stay at 0 warnings.
 - **Hotkey chord parsing** — the text parsing behind the settings chord
   (modifier synonyms, case and spacing drift: `CONTROL+SHIFT+V` and
   `Ctrl+Shift+V` are the same chord) lives in Core and is tested there.
+- **Capture handler chain** — handlers are tried in priority order, and a
+  handler that claims a format but fails to capture falls through to
+  lower-priority handlers instead of dropping the copy (regression tests
+  for a real lost-copy bug).
+- **Paste restore decision** — when staging a paste fails, the pre-paste
+  clipboard snapshot is restored only if the clipboard sequence number
+  moved during staging (i.e. staging actually emptied the clipboard); an
+  untouched clipboard is never overwritten with the older snapshot. The
+  decision lives in Core and is tested there; the staging itself is
+  Windows-only and manually verified.
 
 ## What isn't covered, and why
 
