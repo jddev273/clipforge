@@ -16,6 +16,6 @@ public interface IClipFormatHandler
     /// <summary>True when this format is currently on the clipboard. Must be cheap.</summary>
     bool CanHandle();
 
-    /// <summary>Reads the format. Null means transient failure — the caller retries once.</summary>
+    /// <summary>Reads the format. Null means this format could not be read right now — the caller falls through to lower-priority handlers, then retries the whole capture once.</summary>
     CapturedClip? Capture();
 }

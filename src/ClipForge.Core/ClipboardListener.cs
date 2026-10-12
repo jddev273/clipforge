@@ -191,19 +191,14 @@ public sealed class ClipboardListener : IDisposable
     };
 
     /// <summary>
-    /// Tries each format handler in Priority order. The first handler that claims the
-    /// clipboard (CanHandle) wins; a null Capture means transient failure, which the
-    /// caller retries once before giving up on this update.
+    /// Runs the format-handler chain (see <see cref="FormatHandlerChain"/>):
+    /// priority order, and a handler that claims but fails to capture falls
+    /// through to lower-priority handlers instead of dropping the copy. A
+    /// null result means no handler produced anything — the caller retries
+    /// once before giving up on this update.
     /// </summary>
     private static CapturedClip? TryCapture(IReadOnlyList<IClipFormatHandler> handlers)
-    {
-        foreach (var handler in handlers.OrderBy(static h => h.Priority))
-        {
-            if (!handler.CanHandle()) continue;
-            return handler.Capture();
-        }
-        return null;
-    }
+        => FormatHandlerChain.CaptureFirst(handlers);
 
     public void Dispose()
     {
