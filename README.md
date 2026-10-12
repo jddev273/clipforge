@@ -49,6 +49,8 @@ dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release /p:PublishProfi
 
 The solution also compiles on Linux/macOS (`EnableWindowsTargeting`) for CI — it just can't *run* there.
 
+Tests for the platform-independent projects (Core, Secrets, Search, Storage.Sqlite) run anywhere: `dotnet test ClipForge.sln -c Release`. See [TESTING.md](TESTING.md) for what's covered and what isn't.
+
 ## Project layout
 
 ```
