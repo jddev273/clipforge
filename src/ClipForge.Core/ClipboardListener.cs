@@ -43,6 +43,15 @@ public sealed class ClipboardListener : IDisposable
 
     public bool IsRunning => _thread is { IsAlive: true };
 
+    /// <summary>
+    /// Handle of the listener's message-only window (IntPtr.Zero before Start
+    /// or after Dispose). The app passes this to the clipboard layer as the
+    /// OpenClipboard owner window: the window lives for the app's lifetime on
+    /// a thread that pumps messages, which is exactly what a clipboard owner
+    /// needs to be.
+    /// </summary>
+    public IntPtr WindowHandle => _hwnd.ToIntPtr();
+
     public void Start()
     {
         if (IsRunning) return;

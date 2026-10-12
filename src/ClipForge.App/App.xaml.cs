@@ -114,6 +114,9 @@ public partial class App : System.Windows.Application, IDisposable
         try
         {
             _listener.Start();
+            // The listener's message window owns the clipboard whenever this
+            // process opens it (paste staging, snapshot restore, reads).
+            WindowsClipboard.OwnerWindowHandle = _listener.WindowHandle;
         }
         #pragma warning disable CA1031 // why: startup/shutdown best-effort: a fault here is diagnosed via Debug output, never allowed to take down the app.
         catch (Exception ex)

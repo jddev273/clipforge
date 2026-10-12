@@ -25,6 +25,17 @@ public static class WindowsClipboard
     private static uint RtfFormatId =>
         _rtfFormatId != 0 ? _rtfFormatId : (_rtfFormatId = NativeMethods.RegisterClipboardFormatW("Rich Text Format"));
 
+    /// <summary>
+    /// The window passed to OpenClipboard as the clipboard owner. Set once at
+    /// startup (the app wires the clipboard listener's message-only window).
+    /// Passing a real window — instead of NULL, which leaves the clipboard
+    /// ownerless — is the documented contract for EmptyClipboard /
+    /// SetClipboardData and gives the clipboard an owner other apps can
+    /// query via GetClipboardOwner. Zero (the default) keeps the historical
+    /// task-associated behavior if no owner was wired.
+    /// </summary>
+    public static IntPtr OwnerWindowHandle { get; set; }
+
     // ---------------- read ----------------
 
     public static bool TryGetText(out string? text)
@@ -360,7 +371,7 @@ public static class WindowsClipboard
         {
             try
             {
-                if (!NativeMethods.OpenClipboard(IntPtr.Zero))
+                if (!NativeMethods.OpenClipboard(OwnerWindowHandle))
                 {
                     Thread.Sleep(30);
                     continue;
