@@ -21,6 +21,9 @@ jobs:
       - name: Build
         run: dotnet build ClipForge.sln -c Release --nologo
 
+      - name: Test
+        run: dotnet test ClipForge.sln -c Release --no-build --nologo
+
       - name: Publish (Fast profile)
         run: dotnet publish src/ClipForge.App/ClipForge.App.csproj -c Release /p:PublishProfile=Fast --nologo
 
