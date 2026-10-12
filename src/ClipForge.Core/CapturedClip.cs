@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -27,13 +28,19 @@ public sealed record CapturedClip(
         // MA0009: match timeout bounds catastrophic backtracking on hostile input.
         new("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
-    // Best-effort RTF text extraction for previews only (the handler also grabs the
-    // plain-text companion when the source exposes CF_UNICODETEXT, which covers Word
+    // Best-effort RTF text extraction, used for previews AND as the secret filter's
+    // scan text when no plain-text companion was captured (the handler also grabs
+    // the companion when the source exposes CF_UNICODETEXT, which covers Word
     // et al.). MA0009/MA0023 as above.
     private static readonly Regex RtfPar =
         new(@"\\par[d]?", RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
     private static readonly Regex RtfControl =
         new(@"\\[a-z]+-?\d* ?", RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+    // Named groups ARE read by the decode evaluators in StripRtf (MA0023).
+    private static readonly Regex RtfUnicode =
+        new(@"\\u(?<code>-?\d+)(?:\\'[0-9a-fA-F]{2}|\?)?", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+    private static readonly Regex RtfHexEscape =
+        new(@"\\'(?<hex>[0-9a-fA-F]{2})", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     /// <summary>
     /// Corruption canary for the switch discard arms. The compiler forces us to handle
@@ -64,6 +71,16 @@ public sealed record CapturedClip(
     /// </summary>
     public string? SecretScanText =>
         Type is ClipType.Rtf && string.IsNullOrEmpty(Text) ? StripRtf(RtfText) : Text;
+
+    /// <summary>
+    /// True when a text-shaped capture carries no readable text at all — a
+    /// whitespace-only copy, or an RTF copy of an empty paragraph. Storing one
+    /// would create a blank history row, so the app refuses it at the same
+    /// capture boundary as secrets.
+    /// </summary>
+    public bool IsEmptyTextCapture =>
+        Type is ClipType.Text or ClipType.Html or ClipType.Rtf &&
+        string.IsNullOrWhiteSpace(PreviewText);
 
     public string ContentHash
     {
@@ -113,17 +130,44 @@ public sealed record CapturedClip(
         // MA0009: match timeout on the static overload too.
         Regex.Replace(s, @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
 
-    /// <summary>Best-effort RTF-to-text, preview-only. Returns null when nothing readable remains.</summary>
+    /// <summary>
+    /// Best-effort RTF-to-text. Returns null when nothing readable remains.
+    /// Escape sequences are decoded (\uN and \'hh) before stripping, because the
+    /// secret filter scans this output for companion-less RTF copies: text that
+    /// only exists in escaped form must be just as visible to the filter as it
+    /// is to anyone reading the stored markup.
+    /// </summary>
     private static string? StripRtf(string? rtf)
     {
         if (string.IsNullOrEmpty(rtf)) return null;
         string s = RtfPar.Replace(rtf, "\n");
+        // \uN first: the control-word pass below would eat its digits and leave
+        // only the single fallback char, hiding the real character.
+        s = RtfUnicode.Replace(s, static m => DecodeRtfUnicode(m));
         s = RtfControl.Replace(s, string.Empty);
+        // \'hh after the control-word pass: the apostrophe form is not a control
+        // word, so escapes survive stripping intact until here.
+        s = RtfHexEscape.Replace(s, static m => DecodeRtfHex(m));
         s = s.Replace("{", string.Empty, StringComparison.Ordinal)
              .Replace("}", string.Empty, StringComparison.Ordinal);
         s = CollapseWhitespace(s);
         return string.IsNullOrWhiteSpace(s) ? null : s;
     }
+
+    private static string DecodeRtfUnicode(Match m)
+    {
+        if (!int.TryParse(m.Groups["code"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int code))
+            return string.Empty;
+        if (code < 0) code += 65536; // RTF \u values are signed 16-bit.
+        return code is >= 0 and <= 0x10FFFF and not (>= 0xD800 and <= 0xDFFF)
+            ? char.ConvertFromUtf32(code)
+            : string.Empty;
+    }
+
+    private static string DecodeRtfHex(Match m) =>
+        // RTF payload bytes are ANSI and were read as Latin1 (see TryGetRtf), so a
+        // byte maps to the codepoint of the same value.
+        ((char)int.Parse(m.Groups["hex"].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture)).ToString();
 
     private static string Truncate(string s, int max = 200) =>
         s.Length <= max ? s : s[..max].TrimEnd() + "\u2026";

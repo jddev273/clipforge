@@ -239,6 +239,9 @@ public partial class App : System.Windows.Application, IDisposable
             if (Privacy.IsSensitiveApp(captured.SourceApp) || _settings.IsExcludedApp(captured.SourceApp)) return;
             if (captured.Type is ClipType.Text or ClipType.Html or ClipType.Rtf &&
                 _secrets.Detect(captured.SecretScanText) is not null) return;
+            // A text capture with no readable text (whitespace-only copy, empty
+            // RTF paragraph) would land as a blank history row — refuse it too.
+            if (captured.IsEmptyTextCapture) return;
 
             var clip = captured.ToClip();
             // MA0006: explicit ordinal comparison — hashes are ASCII, culture must not matter.
