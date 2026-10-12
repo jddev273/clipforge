@@ -182,6 +182,13 @@ public static class WindowsClipboard
 
     // ---------------- write ----------------
 
+    // The writers below all follow the same ordering: build the payload and fill
+    // its global-memory block BEFORE the clipboard is opened and emptied, so an
+    // allocation failure can never leave an emptied clipboard behind. Inside the
+    // open block only EmptyClipboard + SetClipboardData remain. If that block
+    // does not succeed, ownership of the block never transferred to the system
+    // and we free it; on success the clipboard owns it — do not free.
+
     public static bool TrySetRtf(string rtf)
     {
         ArgumentNullException.ThrowIfNull(rtf);
@@ -189,20 +196,21 @@ public static class WindowsClipboard
         if (fmt == 0) return false;
         try
         {
-            return WithClipboardOpen(() =>
+            // RTF is ANSI (control words are ASCII); Latin1 round-trips the byte stream.
+            var bytes = Encoding.Latin1.GetBytes(rtf + '\0');
+            var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
+            if (h == IntPtr.Zero) return false;
+            var p = NativeMethods.GlobalLock(h);
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            Marshal.Copy(bytes, 0, p, bytes.Length);
+            NativeMethods.GlobalUnlock(h);
+            bool ok = WithClipboardOpen(() =>
             {
                 NativeMethods.EmptyClipboard();
-                // RTF is ANSI (control words are ASCII); Latin1 round-trips the byte stream.
-                var bytes = Encoding.Latin1.GetBytes(rtf + '\0');
-                var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
-                if (h == IntPtr.Zero) return false;
-                var p = NativeMethods.GlobalLock(h);
-                if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
-                Marshal.Copy(bytes, 0, p, bytes.Length);
-                NativeMethods.GlobalUnlock(h);
                 return NativeMethods.SetClipboardData(fmt, h) != IntPtr.Zero;
-                // NOTE: ownership of h transfers to the clipboard; do not free.
             });
+            if (!ok) NativeMethods.GlobalFree(h);
+            return ok;
         }
         #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
@@ -214,19 +222,20 @@ public static class WindowsClipboard
         ArgumentNullException.ThrowIfNull(text);
         try
         {
-            return WithClipboardOpen(() =>
+            var bytes = Encoding.Unicode.GetBytes(text + '\0');
+            var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
+            if (h == IntPtr.Zero) return false;
+            var p = NativeMethods.GlobalLock(h);
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            Marshal.Copy(bytes, 0, p, bytes.Length);
+            NativeMethods.GlobalUnlock(h);
+            bool ok = WithClipboardOpen(() =>
             {
                 NativeMethods.EmptyClipboard();
-                var bytes = Encoding.Unicode.GetBytes(text + '\0');
-                var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)bytes.Length);
-                if (h == IntPtr.Zero) return false;
-                var p = NativeMethods.GlobalLock(h);
-                if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
-                Marshal.Copy(bytes, 0, p, bytes.Length);
-                NativeMethods.GlobalUnlock(h);
                 return NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, h) != IntPtr.Zero;
-                // NOTE: ownership of h transfers to the clipboard; do not free.
             });
+            if (!ok) NativeMethods.GlobalFree(h);
+            return ok;
         }
         #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
@@ -238,31 +247,33 @@ public static class WindowsClipboard
         ArgumentNullException.ThrowIfNull(paths);
         try
         {
-            return WithClipboardOpen(() =>
+            // DROPFILES (20 bytes) + UTF-16 paths, each null-terminated, final double null.
+            var pathBytes = new List<byte>();
+            foreach (var path in paths)
+            {
+                pathBytes.AddRange(Encoding.Unicode.GetBytes(path));
+                pathBytes.AddRange(new byte[] { 0, 0 });
+            }
+            pathBytes.AddRange(new byte[] { 0, 0 });
+            int total = 20 + pathBytes.Count;
+            var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)total);
+            if (h == IntPtr.Zero) return false;
+            var p = NativeMethods.GlobalLock(h);
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            Marshal.WriteInt32(p, 0, 20);      // pFiles
+            Marshal.WriteInt32(p, 4, 0);       // pt.x
+            Marshal.WriteInt32(p, 8, 0);       // pt.y
+            Marshal.WriteInt32(p, 12, 0);      // fNC
+            Marshal.WriteInt32(p, 16, 1);      // fWide = TRUE
+            Marshal.Copy(pathBytes.ToArray(), 0, p + 20, pathBytes.Count);
+            NativeMethods.GlobalUnlock(h);
+            bool ok = WithClipboardOpen(() =>
             {
                 NativeMethods.EmptyClipboard();
-                // DROPFILES (20 bytes) + UTF-16 paths, each null-terminated, final double null.
-                var pathBytes = new List<byte>();
-                foreach (var path in paths)
-                {
-                    pathBytes.AddRange(Encoding.Unicode.GetBytes(path));
-                    pathBytes.AddRange(new byte[] { 0, 0 });
-                }
-                pathBytes.AddRange(new byte[] { 0, 0 });
-                int total = 20 + pathBytes.Count;
-                var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)total);
-                if (h == IntPtr.Zero) return false;
-                var p = NativeMethods.GlobalLock(h);
-                if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
-                Marshal.WriteInt32(p, 0, 20);      // pFiles
-                Marshal.WriteInt32(p, 4, 0);       // pt.x
-                Marshal.WriteInt32(p, 8, 0);       // pt.y
-                Marshal.WriteInt32(p, 12, 0);      // fNC
-                Marshal.WriteInt32(p, 16, 1);      // fWide = TRUE
-                Marshal.Copy(pathBytes.ToArray(), 0, p + 20, pathBytes.Count);
-                NativeMethods.GlobalUnlock(h);
                 return NativeMethods.SetClipboardData(NativeMethods.CF_HDROP, h) != IntPtr.Zero;
             });
+            if (!ok) NativeMethods.GlobalFree(h);
+            return ok;
         }
         #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
@@ -274,55 +285,70 @@ public static class WindowsClipboard
         ArgumentNullException.ThrowIfNull(pngBytes);
         try
         {
-            // why separate using: Bitmap does NOT take ownership of the constructor stream —
-            // disposing src would leak ms. IDISP004 caught this.
-            using var ms = new MemoryStream(pngBytes);
-            using var src = new Bitmap(ms);
-            using var bmp = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppArgb);
-            using (var g = Graphics.FromImage(bmp))
-                g.DrawImage(src, 0, 0, src.Width, src.Height);
-
-            var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
-            var data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
+            if (!TryBuildDib(pngBytes, out var h)) return false;
+            bool ok = WithClipboardOpen(() =>
             {
-                int stride = data.Stride; // 4-byte aligned for 32bpp
-                int rowBytes = bmp.Width * 4;
-                int total = 40 + stride * bmp.Height;
-                var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)total);
-                if (h == IntPtr.Zero) return false;
-                var p = NativeMethods.GlobalLock(h);
-                if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
-                try
-                {
-                    Marshal.WriteInt32(p, 0, 40);                    // biSize
-                    Marshal.WriteInt32(p, 4, bmp.Width);             // biWidth
-                    Marshal.WriteInt32(p, 8, bmp.Height);            // biHeight (>0 = bottom-up)
-                    Marshal.WriteInt16(p, 12, 1);                    // biPlanes
-                    Marshal.WriteInt16(p, 14, 32);                   // biBitCount
-                    Marshal.WriteInt32(p, 16, 0);                    // biCompression = BI_RGB
-                    Marshal.WriteInt32(p, 20, stride * bmp.Height);  // biSizeImage
-                    var row = new byte[rowBytes];
-                    for (int y = 0; y < bmp.Height; y++)
-                    {
-                        // DIB is bottom-up: last bitmap row first.
-                        Marshal.Copy(data.Scan0 + (bmp.Height - 1 - y) * stride, row, 0, rowBytes);
-                        Marshal.Copy(row, 0, p + 40 + y * stride, rowBytes);
-                    }
-                }
-                finally { NativeMethods.GlobalUnlock(h); }
-
-                return WithClipboardOpen(() =>
-                {
-                    NativeMethods.EmptyClipboard();
-                    return NativeMethods.SetClipboardData(NativeMethods.CF_DIB, h) != IntPtr.Zero;
-                });
-            }
-            finally { bmp.UnlockBits(data); }
+                NativeMethods.EmptyClipboard();
+                return NativeMethods.SetClipboardData(NativeMethods.CF_DIB, h) != IntPtr.Zero;
+            });
+            if (!ok) NativeMethods.GlobalFree(h); // ownership never transferred
+            return ok;
         }
         #pragma warning disable CA1031 // why: best-effort Win32 interop — any fault here must degrade to "not available", never propagate to the caller.
         catch { return false; }
         #pragma warning restore CA1031
+    }
+
+    /// <summary>
+    /// Converts PNG bytes into a CF_DIB global-memory block. On success the
+    /// caller owns the block until it is staged on the clipboard (which takes
+    /// ownership) or freed. (MA0051: extracted from TrySetImage — preparation
+    /// is separate from staging, as in the other writers.)
+    /// </summary>
+    private static bool TryBuildDib(byte[] pngBytes, out IntPtr dibHandle)
+    {
+        dibHandle = IntPtr.Zero;
+        // why separate using: Bitmap does NOT take ownership of the constructor stream —
+        // disposing src would leak ms. IDISP004 caught this.
+        using var ms = new MemoryStream(pngBytes);
+        using var src = new Bitmap(ms);
+        using var bmp = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+            g.DrawImage(src, 0, 0, src.Width, src.Height);
+
+        var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+        var data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int stride = data.Stride; // 4-byte aligned for 32bpp
+            int rowBytes = bmp.Width * 4;
+            int total = 40 + stride * bmp.Height;
+            var h = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (UIntPtr)total);
+            if (h == IntPtr.Zero) return false;
+            var p = NativeMethods.GlobalLock(h);
+            if (p == IntPtr.Zero) { NativeMethods.GlobalFree(h); return false; }
+            try
+            {
+                Marshal.WriteInt32(p, 0, 40);                    // biSize
+                Marshal.WriteInt32(p, 4, bmp.Width);             // biWidth
+                Marshal.WriteInt32(p, 8, bmp.Height);            // biHeight (>0 = bottom-up)
+                Marshal.WriteInt16(p, 12, 1);                    // biPlanes
+                Marshal.WriteInt16(p, 14, 32);                   // biBitCount
+                Marshal.WriteInt32(p, 16, 0);                    // biCompression = BI_RGB
+                Marshal.WriteInt32(p, 20, stride * bmp.Height);  // biSizeImage
+                var row = new byte[rowBytes];
+                for (int y = 0; y < bmp.Height; y++)
+                {
+                    // DIB is bottom-up: last bitmap row first.
+                    Marshal.Copy(data.Scan0 + (bmp.Height - 1 - y) * stride, row, 0, rowBytes);
+                    Marshal.Copy(row, 0, p + 40 + y * stride, rowBytes);
+                }
+            }
+            finally { NativeMethods.GlobalUnlock(h); }
+            dibHandle = h;
+            return true;
+        }
+        finally { bmp.UnlockBits(data); }
     }
 
     // ---------------- internals ----------------

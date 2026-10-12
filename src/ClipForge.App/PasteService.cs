@@ -66,7 +66,21 @@ public static class PasteService
 
         await Task.Delay(120).ConfigureAwait(false); // let focus settle back into the target app
 
-        if (!stage()) return;
+        // Sequence number BEFORE staging: the baseline that tells us whether a
+        // failed stage actually disturbed the clipboard (see ClipboardRestorePolicy).
+        uint sequenceBeforeStage = NativeMethods.GetClipboardSequenceNumber();
+
+        if (!stage())
+        {
+            // Staging failed. If it got as far as emptying the clipboard, the
+            // snapshot is the only copy of what the user had — put it back. If
+            // the sequence is unchanged, staging never touched the clipboard
+            // and the user's (possibly newer) content is still there: leave it.
+            if (ClipboardRestorePolicy.ShouldRestoreAfterFailedStage(
+                    sequenceBeforeStage, NativeMethods.GetClipboardSequenceNumber()))
+                previous.Restore();
+            return;
+        }
         // Sequence number AFTER staging identifies the clipboard state we created.
         uint stagedSequence = NativeMethods.GetClipboardSequenceNumber();
 
